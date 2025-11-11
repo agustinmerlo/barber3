@@ -1,0 +1,436 @@
+/* Services.css - Mismo estilo que Barbers */
+
+:root {
+    --bg: #121212;
+    --card-bg: #1a1a1a;
+    --border: #2a2a2a;
+    --text: #ffffff;
+    --muted: #b0b0b0;
+    --gold: #FFD700;
+    --gold-hover: #e6c200;
+  }
+  
+  * {
+    box-sizing: border-box;
+  }
+  
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* ===== Contenedor principal ===== */
+  .services-page {
+    display: flex;
+    flex-direction: column;
+    padding: 2rem;
+    background-color: var(--bg);
+    min-height: 100vh;
+    gap: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  
+  /* ===== Header ===== */
+  .services-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  
+  .services-header .left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  
+  .services-header h1 {
+    color: var(--gold);
+    font-size: 1.8rem;
+    margin: 0;
+    font-weight: 700;
+  }
+  
+  .back-btn {
+    background: transparent;
+    color: var(--gold);
+    border: 1px solid var(--gold);
+    font-size: 0.95rem;
+    cursor: pointer;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  
+  .back-btn:hover {
+    background-color: var(--gold);
+    color: #000;
+    transform: translateX(-3px);
+  }
+  
+  /* ===== Acciones del header ===== */
+  .services-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  
+  /* ===== Botones ===== */
+  .btn {
+    padding: 0.65rem 1.2rem;
+    border-radius: 8px;
+    border: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .btn.primary {
+    background-color: var(--gold);
+    color: #000;
+  }
+  
+  .btn.primary:hover {
+    background-color: var(--gold-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3);
+  }
+  
+  .btn.ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  
+  .btn.ghost:hover {
+    background: var(--card-bg);
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+  
+  /* ===== Botones de iconos ===== */
+  .icon-btn {
+    background: transparent;
+    border: none;
+    padding: 0.5rem;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .icon-btn.edit {
+    color: #3498db;
+  }
+  
+  .icon-btn.edit:hover {
+    background-color: rgba(52, 152, 219, 0.1);
+    color: #5dade2;
+  }
+  
+  .icon-btn.delete {
+    color: #e74c3c;
+  }
+  
+  .icon-btn.delete:hover {
+    background-color: rgba(231, 76, 60, 0.1);
+    color: #ec7063;
+  }
+  
+  /* ===== Alertas ===== */
+  .alert {
+    background-color: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+    padding: 1rem;
+    border-radius: 8px;
+    border-left: 4px solid #e74c3c;
+    margin-bottom: 1rem;
+  }
+  
+  /* ===== Loading ===== */
+  .loading {
+    text-align: center;
+    padding: 3rem;
+    color: var(--muted);
+    font-size: 1rem;
+    background-color: var(--card-bg);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+  
+  /* ===== Estado vacío ===== */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+    background-color: var(--card-bg);
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+  }
+  
+  .empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+  }
+  
+  .empty-state h3 {
+    color: var(--text);
+    margin: 0 0 0.5rem;
+    font-size: 1.3rem;
+  }
+  
+  .empty-state p {
+    color: var(--muted);
+    margin: 0 0 1.5rem;
+  }
+  
+  /* ===== Grid de servicios (tarjetas) ===== */
+  .services-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+  }
+  
+  .service-card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+  
+  .service-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    border-color: var(--gold);
+  }
+  
+  .service-card-header {
+    position: relative;
+    padding: 2rem 1.5rem 1rem;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .service-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gold) 0%, #ffa500 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    border: 4px solid var(--border);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+  
+  .service-card-actions {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    display: flex;
+    gap: 0.5rem;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 0.4rem;
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+  }
+  
+  .service-card-body {
+    padding: 1.5rem;
+    text-align: center;
+  }
+  
+  .service-card-name {
+    color: var(--gold);
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin: 0 0 1rem;
+    letter-spacing: 0.5px;
+  }
+  
+  .service-card-duration {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin: 0.5rem 0;
+    line-height: 1.5;
+  }
+  
+  .service-card-duration .label {
+    color: var(--text);
+    font-weight: 600;
+    display: inline-block;
+    margin-right: 0.25rem;
+  }
+  
+  .service-card-price {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .price-label {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  
+  .price-value {
+    color: var(--gold);
+    font-size: 1.8rem;
+    font-weight: 700;
+  }
+  
+  /* ===== Modal ===== */
+  .modal-backdrop {
+    background-color: rgba(0, 0, 0, 0.85);
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 999;
+    padding: 1rem;
+    backdrop-filter: blur(4px);
+  }
+  
+  .modal {
+    background-color: var(--card-bg);
+    padding: 2rem;
+    border-radius: 16px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    border: 1px solid var(--border);
+  }
+  
+  .modal h2 {
+    color: var(--gold);
+    margin: 0 0 1.5rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+  
+  /* ===== Formulario ===== */
+  .form-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .form-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .form-grid label > span {
+    color: var(--text);
+    font-weight: 500;
+    font-size: 0.9rem;
+  }
+  
+  .form-grid input[type="text"],
+  .form-grid input[type="number"] {
+    width: 100%;
+    padding: 0.75rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background-color: #222;
+    color: var(--text);
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+  }
+  
+  .form-grid input:focus {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.1);
+  }
+  
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+  
+  /* ===== Responsive ===== */
+  @media (max-width: 768px) {
+    .services-page {
+      padding: 1rem;
+    }
+  
+    .services-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  
+    .services-header h1 {
+      font-size: 1.5rem;
+    }
+  
+    .services-grid {
+      grid-template-columns: 1fr;
+    }
+  
+    .service-icon {
+      width: 70px;
+      height: 70px;
+      font-size: 2rem;
+    }
+  
+    .service-card-name {
+      font-size: 1.2rem;
+    }
+  
+    .price-value {
+      font-size: 1.5rem;
+    }
+  
+    .modal {
+      padding: 1.5rem;
+      margin: 1rem;
+    }
+  }
+  
+  @media (min-width: 769px) and (max-width: 1024px) {
+    .services-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }

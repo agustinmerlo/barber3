@@ -1,0 +1,202 @@
+/* frontend/src/pages/Login.css */
+
+/* --- Variables --- */
+:root {
+    --primary-color: #ffc107;
+    --text-color-light: #ffffff;
+    --text-color-dark: #333333;
+    --card-background: rgba(0, 0, 0, 0.75);
+    /* Traslúcido */
+    --input-background: #ffffff;
+}
+
+/* --- Contenedor Principal y Fondo --- */
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: Arial, sans-serif;
+    position: relative;
+    overflow: hidden;
+}
+
+.login-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    /* Usa la imagen de fondo deseada */
+    background-image: url('https://png.pngtree.com/background/20230612/original/pngtree-barbershop-with-chairs-in-traditional-styles-and-mirrors-in-front-picture-image_3372710.jpg');
+    background-size: cover;
+    background-position: center;
+    filter: brightness(0.4);
+    /* Oscurecimiento */
+    z-index: 1;
+}
+
+/* --- Tarjeta de Login (Oscura y Transparente) --- */
+.login-card {
+    background-color: var(--card-background);
+    padding: 40px;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    text-align: center;
+    z-index: 2;
+    /* Encima del fondo */
+    color: var(--text-color-light);
+    width: 100%;
+    max-width: 400px;
+}
+
+.login-logo-container {
+    margin-bottom: 30px;
+}
+
+/* --- ESTILOS PARA EL LOGO DE IMAGEN --- */
+.logo-image {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    border: 3px solid var(--primary-color);
+    object-fit: cover;
+    display: block;
+    margin: 0 auto;
+}
+
+/* Ocultar el viejo logo de texto */
+.login-logo {
+    display: none !important;
+}
+
+
+.login-card h2 {
+    margin-bottom: 30px;
+    color: var(--text-color-light);
+    font-size: 1.8em;
+}
+
+
+/* --- Formulario y Campos de Input (CORRECCIÓN CRÍTICA DE ICONOS) --- */
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.input-group {
+    position: relative;
+    /* ¡CLAVE! Para posicionar el icono absoluto */
+    display: flex;
+    align-items: center;
+    background: none;
+    padding: 0;
+    border-radius: 0;
+}
+
+/* *** ESTILO DEL ICONO (Aseguramos la posición) *** */
+.input-icon {
+    display: flex !important;
+    align-items: center;
+    position: absolute !important;
+    left: 12px !important;
+    /* Mantenemos el icono aquí */
+    top: 50%;
+    transform: translateY(-50%);
+    color: #999;
+    font-size: 1.2em;
+    z-index: 10;
+}
+
+/* *** AJUSTE DEL INPUT: PADDING EXTREMO Y FORZADO (LA SOLUCIÓN FINAL) *** */
+.input-group input {
+    flex-grow: 1;
+    background-color: var(--input-background);
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    outline: none;
+    color: var(--text-color-dark);
+    /* ¡CORRECCIÓN CLAVE! 55px con !important para forzar el espacio y vencer la caché */
+    padding: 15px 15px 15px 55px !important;
+    font-size: 1em;
+    transition: border-color 0.3s ease;
+}
+
+.input-group input:focus {
+    border-color: var(--primary-color);
+}
+
+.input-group input::placeholder {
+    color: #999;
+}
+
+/* Ocultar elementos viejos y toggle de ojo */
+.input-toggle-password {
+    display: none;
+}
+
+
+/* --- Opciones y Botón --- */
+.form-options {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9em;
+}
+
+.remember-me {
+    color: #ccc;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.remember-me input[type="checkbox"] {
+    margin-right: 5px;
+    accent-color: var(--primary-color);
+}
+
+.form-options a {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.form-options a:hover {
+    text-decoration: underline;
+}
+
+.login-button {
+    background-color: var(--primary-color);
+    color: black;
+    padding: 15px 20px;
+    border: none;
+    border-radius: 5px;
+    font-size: 1.1em;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    font-weight: bold;
+}
+
+.login-button:hover {
+    background-color: #e0a800;
+}
+
+
+/* --- Enlace de Registro --- */
+.register-link-container {
+    margin-top: 25px;
+    font-size: 0.95em;
+    color: #ccc;
+}
+
+.register-link-container a {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.register-link-container a:hover {
+    text-decoration: underline;
+}

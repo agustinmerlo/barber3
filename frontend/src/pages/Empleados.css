@@ -1,0 +1,421 @@
+/* Empleados.css */
+:root {
+  --bg: #121212;
+  --card-bg: #1a1a1a;
+  --border: #2a2a2a;
+  --text: #ffffff;
+  --muted: #b0b0b0;
+  --gold: #FFD700;
+  --gold-hover: #e6c200;
+  --success: #27ae60;
+  --danger: #e74c3c;
+  --warning: #f39c12;
+}
+
+* { box-sizing: border-box; }
+
+.empleados-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 2rem;
+  max-width: 1600px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ===== HEADER ===== */
+.empleados-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.empleados-header h1 {
+  color: var(--gold);
+  font-size: 1.8rem;
+  margin: 0;
+  font-weight: 700;
+  flex: 1;
+}
+
+.back-btn {
+  background: transparent;
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  font-size: 0.95rem;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.back-btn:hover { 
+  background: var(--gold); 
+  color: #000; 
+  transform: translateX(-3px); 
+}
+
+.input.search {
+  min-width: 300px;
+  padding: 0.6rem 0.9rem 0.6rem 2.2rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #1d1d1d url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23b0b0b0' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") no-repeat 10px center;
+  color: var(--text);
+  outline: 0;
+  transition: border-color .2s, box-shadow .2s;
+  font-size: 0.95rem;
+}
+.input.search::placeholder { color: var(--muted); }
+.input.search:focus { 
+  border-color: var(--gold); 
+  box-shadow: 0 0 0 3px rgba(255,215,0,.12); 
+}
+
+/* ===== ESTADÍSTICAS ===== */
+.stats-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.stat-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: all 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--gold);
+  box-shadow: 0 8px 24px rgba(0,0,0,.3);
+}
+
+.stat-icon {
+  font-size: 2.5rem;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,215,0,.1);
+  border-radius: 12px;
+}
+
+.stat-info h3 {
+  font-size: 2rem;
+  margin: 0;
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.stat-info p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* ===== ALERT ===== */
+.alert {
+  background: rgba(231,76,60,.15);
+  color: #e74c3c;
+  padding: 1rem;
+  border-radius: 8px;
+  border-left: 4px solid #e74c3c;
+  font-size: 0.95rem;
+}
+
+/* ===== LOADING & EMPTY ===== */
+.loading {
+  text-align: center;
+  padding: 3rem;
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  background: var(--card-bg);
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+}
+
+.empty-icon {
+  font-size: 3rem;
+  opacity: .6;
+  margin-bottom: .75rem;
+}
+
+.empty-state h3 {
+  margin: 0 0 .5rem;
+  color: var(--text);
+}
+
+.empty-state p {
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ===== TABLA ===== */
+.empleados-table-container {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.empleados-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.empleados-table thead {
+  background: rgba(255,215,0,.08);
+  border-bottom: 2px solid var(--border);
+}
+
+.empleados-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--gold);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.empleados-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.2s;
+}
+
+.empleados-table tbody tr:hover {
+  background: rgba(255,215,0,.05);
+}
+
+.empleados-table tbody tr.inactive-row {
+  opacity: 0.5;
+}
+
+.empleados-table td {
+  padding: 1rem;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+/* Usuario Cell */
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-info strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.user-info small {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Role Badge */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* Status Badge */
+.status-badge {
+  display: inline-block;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.status-badge.active {
+  background: rgba(39,174,96,.15);
+  color: var(--success);
+  border: 1px solid rgba(39,174,96,.3);
+}
+
+.status-badge.inactive {
+  background: rgba(231,76,60,.15);
+  color: var(--danger);
+  border: 1px solid rgba(231,76,60,.3);
+}
+
+/* Actions Cell */
+.actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.role-select {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #1d1d1d;
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23b0b0b0' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  padding-right: 2rem;
+}
+
+.role-select:hover {
+  border-color: var(--gold);
+}
+
+.role-select:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(255,215,0,.1);
+}
+
+.role-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-toggle {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-toggle.active {
+  background: rgba(39,174,96,.15);
+  color: var(--success);
+}
+
+.btn-toggle.active:hover {
+  background: rgba(39,174,96,.25);
+  transform: scale(1.05);
+}
+
+.btn-toggle.inactive {
+  background: rgba(231,76,60,.15);
+  color: var(--danger);
+}
+
+.btn-toggle.inactive:hover {
+  background: rgba(231,76,60,.25);
+  transform: scale(1.05);
+}
+
+.btn-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 1200px) {
+  .empleados-table-container {
+    overflow-x: auto;
+  }
+  
+  .empleados-table {
+    min-width: 900px;
+  }
+}
+
+@media (max-width: 768px) {
+  .empleados-page {
+    padding: 1rem;
+  }
+  
+  .empleados-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .input.search {
+    width: 100%;
+    min-width: 0;
+  }
+  
+  .stats-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .empleados-header h1 {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-cards {
+    grid-template-columns: 1fr;
+  }
+  
+  .stat-card {
+    padding: 1rem;
+  }
+  
+  .stat-icon {
+    width: 50px;
+    height: 50px;
+    font-size: 2rem;
+  }
+  
+  .stat-info h3 {
+    font-size: 1.5rem;
+  }
+}

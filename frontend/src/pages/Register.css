@@ -1,0 +1,173 @@
+:root {
+    --primary-color: #ffc107;
+    --text-color-light: #ffffff;
+    --text-color-dark: #333333;
+    --card-background: rgba(0, 0, 0, 0.85);
+    --input-background: #ffffff;
+}
+
+.register-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Inter', sans-serif;
+    position: relative;
+    overflow: hidden;
+}
+
+.background-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('https://png.pngtree.com/thumb_back/fw800/background/20230612/pngtree-barbershop-with-chairs-in-traditional-styles-and-mirrors-in-front-image_2906285.jpg');
+    background-size: cover;
+    background-position: center;
+    filter: brightness(0.4);
+    z-index: 1;
+}
+
+.card {
+    background-color: var(--card-background);
+    padding: 40px;
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+    text-align: center;
+    z-index: 2;
+    color: var(--text-color-light);
+    width: 100%;
+    max-width: 450px;
+}
+
+.card h2 {
+    margin-bottom: 10px;
+    color: var(--primary-color);
+    font-size: 2em;
+}
+
+.card .subtitle {
+    margin-bottom: 25px;
+    color: #ccc;
+    font-size: 1em;
+}
+
+.logo-container {
+    margin-bottom: 20px;
+}
+
+.logo-image {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: 3px solid var(--primary-color);
+    object-fit: cover;
+    display: block;
+    margin: 0 auto;
+}
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.input-group {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-icon {
+    display: flex;
+    align-items: center;
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #999;
+    font-size: 1.2em;
+    z-index: 10;
+}
+
+.input-group input {
+    flex-grow: 1;
+    background-color: var(--input-background);
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    outline: none;
+    color: var(--text-color-dark);
+    padding: 14px 15px 14px 50px;
+    font-size: 1em;
+    transition: border-color 0.3s ease;
+}
+
+.input-group input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(255,193,7,0.3);
+}
+
+.input-group input::placeholder {
+    color: #999;
+}
+
+.register-button {
+    background-color: var(--primary-color);
+    color: black;
+    padding: 15px 20px;
+    border: none;
+    border-radius: 5px;
+    font-size: 1.1em;
+    cursor: pointer;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+.register-button:hover {
+    background-color: #e0a800;
+}
+
+.register-button:disabled {
+    background-color: #555;
+    color: #ccc;
+    cursor: not-allowed;
+}
+
+.login-link-container {
+    margin-top: 20px;
+    font-size: 0.95em;
+    color: #ccc;
+}
+
+.login-link-container a {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.password-requirements {
+    text-align: left;
+    font-size: 0.9em;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+.password-requirements p {
+    margin: 3px 0;
+}
+
+.password-requirements .valid {
+    color: #00ff00; /* verde */
+}
+
+.password-requirements .invalid {
+    color: #ff5555; /* rojo */
+}
+
+.error-message {
+    color: #ff5555;
+    font-size: 0.9em;
+    margin-top: 5px;
+}
