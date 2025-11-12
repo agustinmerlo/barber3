@@ -2,22 +2,23 @@
 from django.urls import path
 from . import views
 
-app_name = 'reservas'
-
 urlpatterns = [
-    # Crear nueva reserva (cliente)
+    # Listar y crear
+    path('', views.listar_reservas, name='listar_reservas'),
     path('crear/', views.crear_reserva, name='crear_reserva'),
     
-    # Listar reservas de un cliente específico
-    path('cliente/', views.listar_reservas_cliente, name='listar_reservas_cliente'),
+    # Horarios disponibles
+    path('horarios/', views.horarios_disponibles, name='horarios_disponibles'),
     
-    # Listar reservas (admin - con filtros opcionales)
-    path('', views.listar_reservas, name='listar_reservas'),
-    
-    # 🆕 Acciones específicas PRIMERO (para que no las capture la ruta genérica)
+    # Operaciones específicas de una reserva
+    path('<int:reserva_id>/', views.actualizar_reserva, name='actualizar_reserva'),
     path('<int:reserva_id>/confirmar/', views.confirmar_reserva, name='confirmar_reserva'),
     path('<int:reserva_id>/rechazar/', views.rechazar_reserva, name='rechazar_reserva'),
     
-    # 🆕 Ruta genérica para GET/PATCH/PUT al FINAL
-    path('<int:reserva_id>/', views.actualizar_reserva, name='reserva_detail'),
+    # 🆕 Nuevo endpoint para registrar pago restante
+    path('<int:reserva_id>/pagar-restante/', views.registrar_pago_restante, name='registrar_pago_restante'),
+    
+    # Panel del cliente
+    path('cliente/', views.listar_reservas_cliente, name='listar_reservas_cliente'),
+    path('cliente/contadores/', views.reservas_cliente_contadores, name='reservas_cliente_contadores'),
 ]

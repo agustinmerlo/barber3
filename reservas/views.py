@@ -536,3 +536,183 @@ Equipo Barberia Clase V'''
         return Response({'mensaje': 'Reserva rechazada', 'data': serializer.data}, status=200)
     except Reserva.DoesNotExist:
         return Response({'error': 'Reserva no encontrada'}, status=404)
+    
+
+# ==========================================
+# 🆕 OBTENER/ACTUALIZAR RESERVA (GET/PATCH/PUT)
+# ==========================================
+@api_view(['GET', 'PATCH', 'PUT'])
+@permission_classes([AllowAny])
+def actualizar_reserva(request, reserva_id):
+    """
+    GET /api/reservas/<id>/     → Obtener detalles de la reserva
+    PATCH /api/reservas/<id>/   → Actualizar campos específicos (seña, saldo_pagado, etc.)
+    PUT /api/reservas/<id>/     → Actualizar todos los campos
+    """
+    try:
+        reserva = Reserva.objects.get(id=reserva_id)
+    except Reserva.DoesNotExist:
+        return Response({'error': 'Reserva no encontrada'}, status=404)
+
+    # Si es GET, solo devolver los datos
+    if request.method == 'GET':
+        serializer = ReservaSerializer(reserva)
+        return Response(serializer.data, status=200)
+
+    # Si es PATCH o PUT, actualizar
+    print(f"📥 Datos recibidos para actualizar: {request.data}")
+    
+    serializer = ReservaSerializer(
+        reserva, 
+        data=request.data, 
+        partial=(request.method == 'PATCH')
+    )
+    
+    if serializer.is_valid():
+        reserva_actualizada = serializer.save()
+        
+        print(f"✅ Reserva actualizada:")
+        print(f"   - Total: {reserva_actualizada.total}")
+        print(f"   - Seña: {reserva_actualizada.seña}")
+        print(f"   - Saldo pagado: {reserva_actualizada.saldo_pagado}")
+        print(f"   - Pendiente: {reserva_actualizada.pendiente}")
+        print(f"   - Estado pago: {reserva_actualizada.estado_pago}")
+        
+        response_serializer = ReservaSerializer(reserva_actualizada)
+        return Response({
+            'mensaje': 'Reserva actualizada exitosamente',
+            'data': response_serializer.data
+        }, status=200)
+    
+    print(f"❌ Errores de validación: {serializer.errors}")
+    return Response(serializer.errors, status=400)
+
+# ==========================================
+# CONFIRMAR RESERVA Y REGISTRAR EN CAJA
+# ==========================================
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def confirmar_reserva(request, reserva_id):
+    try:
+        from caja.models import MovimientoCaja  # ✅ Importar al inicio
+        
+        reserva = Reserva.objects.get(id=reserva_id)
+        
+        # ✅ 1. Cambiar estado de la reserva
+        reserva.estado = 'confirmada'
+        reserva.fecha_confirmacion = timezone.now()
+        reserva.save()
+
+        # ✅ 2. REGISTRAR LA SEÑA EN LA CAJA (solo si hay seña > 0)
+        if reserva.seña and reserva.seña > 0:
+            try:
+                # Crear descripción de servicios
+                servicios_nombres = ', '.join([
+                    s.get('nombre', '') for s in reserva.servicios[:3]
+                ]) if reserva.servicios else 'Servicios varios'
+                
+                # Crear movimiento de ingreso por seña
+                MovimientoCaja.objects.create(
+                    tipo='ingreso',
+                    monto=reserva.seña,
+                    descripcion=f'Seña reserva #{reserva.id} - {reserva.nombre_cliente} {reserva.apellido_cliente} - {servicios_nombres}',
+                    metodo_pago='transferencia',  # ya que pagó con comprobante
+                    categoria='servicios',
+                    fecha=timezone.now().date(),
+                    hora=timezone.now().time(),
+                    barbero=reserva.barbero,
+                    reserva=reserva,
+                    usuario_registro=request.user if request.user.is_authenticated else None,
+                    comprobante=reserva.comprobante
+                )
+                print(f"✅ Seña de ${reserva.seña} registrada en caja para reserva #{reserva.id}")
+            except Exception as e:
+                print(f"❌ Error al registrar seña en caja: {e}")
+                import traceback
+                traceback.print_exc()
+                # No fallar la confirmación si falla el registro en caja
+
+        # ✅ 3. Enviar email al cliente
+        mensaje_cliente = f'''Hola {reserva.nombre_cliente},
+
+EXCELENTES NOTICIAS! Tu reserva ha sido CONFIRMADA.
+
+DETALLES DE TU CITA:
+- Fecha: {reserva.fecha.strftime("%d/%m/%Y")}
+- Hora: {reserva.horario.strftime("%H:%M")}
+- Barbero: {reserva.barbero_nombre}
+- Duracion estimada: {reserva.duracion_total} minutos
+
+INFORMACION DE PAGO:
+- Total del servicio: ${reserva.total}
+- Sena pagada: ${reserva.seña}
+- Resto a pagar (en efectivo): ${reserva.resto_a_pagar}
+
+Te esperamos!
+Si necesitas reprogramar o cancelar, escribenos por WhatsApp.
+
+Saludos,
+Equipo Barberia Clase V'''
+
+        enviar_email_utf8(
+            'Reserva Confirmada - Barberia Clase V',
+            mensaje_cliente,
+            reserva.email_cliente
+        )
+
+        # ✅ 4. Enviar email al barbero
+        if reserva.barbero and reserva.barbero.email:
+            servicios_texto = "\n".join([
+                f"  - {s.get('nombre', 'Servicio')} (${s.get('precio', 0)})"
+                for s in reserva.servicios
+            ]) if reserva.servicios else "  - Sin detalles"
+
+            mensaje_barbero = f'''Hola {reserva.barbero.username},
+
+Tienes una NUEVA RESERVA CONFIRMADA!
+
+DETALLES DE LA CITA:
+- Cliente: {reserva.nombre_cliente} {reserva.apellido_cliente}
+- Fecha: {reserva.fecha.strftime("%d/%m/%Y")}
+- Hora: {reserva.horario.strftime("%H:%M")}
+- Duracion: {reserva.duracion_total} minutos
+
+SERVICIOS SOLICITADOS:
+{servicios_texto}
+
+CONTACTO DEL CLIENTE:
+- Telefono: {reserva.telefono_cliente}
+- Email: {reserva.email_cliente}
+
+PAGO:
+- Total: ${reserva.total}
+- Sena recibida: ${reserva.seña}
+- A cobrar en efectivo: ${reserva.resto_a_pagar}
+
+⚠️ IMPORTANTE: La seña de ${reserva.seña} ya fue registrada en caja.
+Solo debes cobrar ${reserva.resto_a_pagar} en efectivo al finalizar el servicio.
+
+Puedes ver todos los detalles en tu panel de barbero.
+
+Saludos,
+Equipo Barberia Clase V'''
+
+            enviar_email_utf8(
+                f'Nueva Reserva Confirmada - {reserva.fecha.strftime("%d/%m/%Y")}',
+                mensaje_barbero,
+                reserva.barbero.email
+            )
+
+        serializer = ReservaSerializer(reserva)
+        return Response({
+            'mensaje': 'Reserva confirmada y seña registrada en caja exitosamente', 
+            'data': serializer.data
+        }, status=200)
+        
+    except Reserva.DoesNotExist:
+        return Response({'error': 'Reserva no encontrada'}, status=404)
+    except Exception as e:
+        print(f"❌ Error al confirmar reserva: {e}")
+        import traceback
+        traceback.print_exc()
+        return Response({'error': f'Error al confirmar reserva: {str(e)}'}, status=500)

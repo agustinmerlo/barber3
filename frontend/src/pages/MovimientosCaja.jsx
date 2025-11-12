@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Lock, Unlock, TrendingUp, TrendingDown, DollarSign, Calendar, Filter, Edit2, Trash2, Plus, X, FileText, Clock } from "lucide-react";
 
 const API_URL = "http://localhost:8000/api";
 
@@ -20,9 +21,15 @@ const MovimientosCaja = () => {
   const [modalApertura, setModalApertura] = useState(false);
   const [modalCierre, setModalCierre] = useState(false);
   const [montoApertura, setMontoApertura] = useState("");
-  const [montoCierre, setMontoCierre] = useState("");
+  const [efectivoReal, setEfectivoReal] = useState("");
   const [observacionesCierre, setObservacionesCierre] = useState("");
   const [turnoActual, setTurnoActual] = useState(null);
+  
+  // Estados para historial de cierres
+  const [historialCierres, setHistorialCierres] = useState([]);
+  const [modalHistorial, setModalHistorial] = useState(false);
+  const [cierreSeleccionado, setCierreSeleccionado] = useState(null);
+  const [modalDetalleCierre, setModalDetalleCierre] = useState(false);
 
   // Formulario
   const [formData, setFormData] = useState({
@@ -31,12 +38,12 @@ const MovimientosCaja = () => {
     descripcion: "",
     metodo_pago: "efectivo",
     categoria: "servicios",
-    fecha: new Date().toISOString().split('T')[0]
-  });
+  }); 
 
   useEffect(() => {
     verificarEstadoCaja();
     cargarMovimientos();
+    cargarHistorialCierres();
   }, []);
 
   const verificarEstadoCaja = () => {
@@ -51,14 +58,14 @@ const MovimientosCaja = () => {
   const cargarMovimientos = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/caja/`);
+      const res = await fetch(`${API_URL}/caja/movimientos-sin-cierre/`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const todosMovimientos = Array.isArray(data) ? data : data?.results ?? [];
       
       const movimientosOrdenados = todosMovimientos.sort((a, b) => {
-        const fechaA = new Date(a.fecha + 'T' + (a.hora || '00:00:00'));
-        const fechaB = new Date(b.fecha + 'T' + (b.hora || '00:00:00'));
+        const fechaA = new Date(a.fecha_creacion);
+        const fechaB = new Date(b.fecha_creacion);
         return fechaB - fechaA;
       });
 
@@ -70,7 +77,19 @@ const MovimientosCaja = () => {
     }
   };
 
-  const abrirCaja = () => {
+  const cargarHistorialCierres = async () => {
+    try {
+      const res = await fetch(`${API_URL}/caja/cierres/historial/`);
+      if (res.ok) {
+        const data = await res.json();
+        setHistorialCierres(data);
+      }
+    } catch (err) {
+      console.error("Error cargando historial:", err);
+    }
+  };
+
+  const abrirCaja = async () => {
     if (!montoApertura || parseFloat(montoApertura) < 0) {
       alert("Ingresa un monto de apertura válido");
       return;
@@ -90,59 +109,77 @@ const MovimientosCaja = () => {
     setModalApertura(false);
     setMontoApertura("");
     
-    alert("Caja abierta exitosamente");
+    alert("✅ Caja abierta exitosamente");
   };
 
   const prepararCierreCaja = () => {
     const efectivoEnCaja = calcularEfectivoEnCaja();
-    setMontoCierre(efectivoEnCaja.toString());
+    setEfectivoReal(efectivoEnCaja.toString());
     setModalCierre(true);
   };
 
-  const cerrarCaja = () => {
-    if (!montoCierre || parseFloat(montoCierre) < 0) {
-      alert("Ingresa un monto de cierre válido");
+  const cerrarCaja = async () => {
+    if (!efectivoReal || parseFloat(efectivoReal) < 0) {
+      alert("❌ Ingresa un monto de efectivo real válido");
       return;
     }
 
-    const efectivoEsperado = calcularEfectivoEnCaja();
-    const montoReal = parseFloat(montoCierre);
-    const diferencia = montoReal - efectivoEsperado;
+    try {
+      // Preparar datos para el backend
+      const cierreData = {
+        fecha_apertura: turnoActual.fechaApertura,
+        monto_inicial: turnoActual.montoApertura,
+        efectivo_real: parseFloat(efectivoReal),
+        observaciones: observacionesCierre,
+        usuario_apertura_id: 1 // Cambiar por el ID del usuario real
+      };
 
-    const resumen = {
-      ...turnoActual,
-      fechaCierre: new Date().toISOString(),
-      montoCierre: montoReal,
-      efectivoEsperado,
-      diferencia,
-      observaciones: observacionesCierre
-    };
+      // Enviar cierre al backend
+      const res = await fetch(`${API_URL}/caja/cierres/cerrar_caja/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cierreData)
+      });
 
-    // Guardar resumen del turno
-    const historialTurnos = JSON.parse(localStorage.getItem('historialTurnos') || '[]');
-    historialTurnos.push(resumen);
-    localStorage.setItem('historialTurnos', JSON.stringify(historialTurnos));
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Error al cerrar caja');
+      }
 
-    // Cerrar caja
-    localStorage.removeItem('cajaAbierta');
-    localStorage.removeItem('turnoActual');
-    
-    setCajaAbierta(false);
-    setTurnoActual(null);
-    setModalCierre(false);
-    setMontoCierre("");
-    setObservacionesCierre("");
+      const resultado = await res.json();
+      
+      // Cerrar caja localmente
+      localStorage.removeItem('cajaAbierta');
+      localStorage.removeItem('turnoActual');
+      
+      setCajaAbierta(false);
+      setTurnoActual(null);
+      setModalCierre(false);
+      setEfectivoReal("");
+      setObservacionesCierre("");
 
-    // Mostrar resumen
-    const mensaje = `
-Caja cerrada exitosamente
+      // Recargar datos
+      await cargarMovimientos();
+      await cargarHistorialCierres();
 
-Efectivo esperado: $${efectivoEsperado.toFixed(2)}
-Efectivo real: $${montoReal.toFixed(2)}
-Diferencia: $${diferencia.toFixed(2)} ${diferencia >= 0 ? '(Sobrante)' : '(Faltante)'}
-    `;
-    
-    alert(mensaje);
+      // Mostrar resumen
+      const cierre = resultado.cierre;
+      const diferencia = cierre.diferencia;
+      const mensaje = `✅ Caja cerrada exitosamente
+
+💰 Efectivo esperado: $${cierre.efectivo_esperado.toFixed(2)}
+💵 Efectivo real: $${cierre.efectivo_real.toFixed(2)}
+${diferencia >= 0 ? '✅' : '⚠️'} Diferencia: $${Math.abs(diferencia).toFixed(2)} ${diferencia >= 0 ? '(Sobrante)' : '(Faltante)'}
+
+📊 Total movimientos: ${cierre.cantidad_movimientos}
+📈 Ingresos: ${cierre.cantidad_ingresos}
+📉 Egresos: ${cierre.cantidad_egresos}`;
+      
+      alert(mensaje);
+    } catch (err) {
+      console.error("Error cerrando caja:", err);
+      alert(`❌ Error al cerrar caja: ${err.message}`);
+    }
   };
 
   const calcularEfectivoEnCaja = () => {
@@ -151,7 +188,7 @@ Diferencia: $${diferencia.toFixed(2)} ${diferencia >= 0 ? '(Sobrante)' : '(Falta
     const fechaApertura = new Date(turnoActual.fechaApertura);
     
     const movimientosDelTurno = movimientos.filter(m => {
-      const fechaMov = new Date(m.fecha + 'T' + (m.hora || '00:00:00'));
+      const fechaMov = new Date(m.fecha_creacion);
       return fechaMov >= fechaApertura && m.metodo_pago === 'efectivo';
     });
 
@@ -168,7 +205,7 @@ Diferencia: $${diferencia.toFixed(2)} ${diferencia >= 0 ? '(Sobrante)' : '(Falta
 
   const abrirModalNuevo = () => {
     if (!cajaAbierta) {
-      alert("Debes abrir la caja antes de registrar movimientos");
+      alert("❌ Debes abrir la caja antes de registrar movimientos");
       return;
     }
     setModoEdicion(false);
@@ -179,8 +216,7 @@ Diferencia: $${diferencia.toFixed(2)} ${diferencia >= 0 ? '(Sobrante)' : '(Falta
       descripcion: "",
       metodo_pago: "efectivo",
       categoria: "servicios",
-      fecha: new Date().toISOString().split('T')[0]
-    });
+    }); 
     setModalAbierto(true);
   };
 
@@ -193,8 +229,7 @@ Diferencia: $${diferencia.toFixed(2)} ${diferencia >= 0 ? '(Sobrante)' : '(Falta
       descripcion: movimiento.descripcion || "",
       metodo_pago: movimiento.metodo_pago || "efectivo",
       categoria: movimiento.categoria || "servicios",
-      fecha: movimiento.fecha
-    });
+    }); 
     setModalAbierto(true);
   };
 
@@ -208,18 +243,17 @@ Diferencia: $${diferencia.toFixed(2)} ${diferencia >= 0 ? '(Sobrante)' : '(Falta
       descripcion: "",
       metodo_pago: "efectivo",
       categoria: "servicios",
-      fecha: new Date().toISOString().split('T')[0]
     });
   };
 
   const guardarMovimiento = async () => {
     if (!formData.monto || parseFloat(formData.monto) <= 0) {
-      alert("Ingresa un monto válido");
+      alert("❌ Ingresa un monto válido");
       return;
     }
 
     if (!formData.descripcion.trim()) {
-      alert("Ingresa una descripción");
+      alert("❌ Ingresa una descripción");
       return;
     }
 
@@ -244,19 +278,19 @@ Diferencia: $${diferencia.toFixed(2)} ${diferencia >= 0 ? '(Sobrante)' : '(Falta
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      alert(`Movimiento ${modoEdicion ? "actualizado" : "registrado"} exitosamente`);
+      alert(`✅ Movimiento ${modoEdicion ? "actualizado" : "registrado"} exitosamente`);
       cerrarModal();
       cargarMovimientos();
     } catch (err) {
       console.error("Error guardando movimiento:", err);
-      alert("Error al guardar el movimiento. Intenta nuevamente.");
+      alert("❌ Error al guardar el movimiento. Intenta nuevamente.");
     } finally {
       setGuardando(false);
     }
   };
 
   const eliminarMovimiento = async (id) => {
-    if (!window.confirm("¿Estás seguro de eliminar este movimiento?")) return;
+    if (!window.confirm("⚠️ ¿Estás seguro de eliminar este movimiento?")) return;
 
     try {
       const res = await fetch(`${API_URL}/caja/${id}/`, {
@@ -265,38 +299,49 @@ Diferencia: $${diferencia.toFixed(2)} ${diferencia >= 0 ? '(Sobrante)' : '(Falta
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      alert("Movimiento eliminado exitosamente");
+      alert("✅ Movimiento eliminado exitosamente");
       cargarMovimientos();
     } catch (err) {
       console.error("Error eliminando movimiento:", err);
-      alert("Error al eliminar el movimiento.");
+      alert("❌ Error al eliminar el movimiento.");
+    }
+  };
+
+  const verDetalleCierre = async (cierre) => {
+    try {
+      const res = await fetch(`${API_URL}/caja/cierres/${cierre.id}/detalle_completo/`);
+      if (res.ok) {
+        const detalle = await res.json();
+        setCierreSeleccionado(detalle);
+        setModalDetalleCierre(true);
+      }
+    } catch (err) {
+      console.error("Error cargando detalle:", err);
+      alert("❌ Error al cargar detalle del cierre");
     }
   };
 
   const formatearFecha = (fecha) => {
     if (!fecha) return "-";
-    const [year, month, day] = fecha.split('-').map(Number);
-    const d = new Date(year, month - 1, day);
-    if (isNaN(d.getTime())) return fecha;
-    return d.toLocaleDateString("es-ES", { 
+    return new Date(fecha).toLocaleDateString("es-AR", { 
       day: "2-digit", 
       month: "short",
       year: "numeric"
     });
   };
 
-  const formatearHora = (hora) => {
-    if (!hora) return "";
-    const [h, m] = hora.substring(0, 5).split(':');
-    const hour = parseInt(h);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${m} ${ampm}`;
+  const formatearHora = (fecha) => {
+    if (!fecha) return "";
+    return new Date(fecha).toLocaleTimeString("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
   };
 
   const formatearFechaHora = (fechaISO) => {
+    if (!fechaISO) return "-";
     const fecha = new Date(fechaISO);
-    return fecha.toLocaleString("es-ES", {
+    return fecha.toLocaleString("es-AR", {
       day: "2-digit",
       month: "short",
       hour: "2-digit",
@@ -332,961 +377,367 @@ Diferencia: $${diferencia.toFixed(2)} ${diferencia >= 0 ? '(Sobrante)' : '(Falta
   const totalEgresosFiltrados = movimientosFiltrados
     .filter(m => m.tipo === "egreso")
     .reduce((sum, m) => sum + parseFloat(m.monto || 0), 0);
-
-  const getTipoIcon = (tipo) => {
-    return tipo === "ingreso" ? "📈" : "📉";
-  };
-
-  const getTipoColor = (tipo) => {
-    return tipo === "ingreso" ? "#4caf50" : "#f44336";
-  };
-
-  const getMetodoIcon = (metodo) => {
-    const iconos = {
-      efectivo: "💵",
-      tarjeta: "💳",
-      transferencia: "🏦",
-      mercadopago: "📱"
-    };
-    return iconos[metodo] || "💰";
-  };
-
-  const getCategoriaIcon = (categoria) => {
-    const iconos = {
-      servicios: "✂️",
-      productos: "🛍️",
-      gastos: "📊",
-      sueldos: "👨‍💼",
-      alquiler: "🏢",
-      servicios_publicos: "💡",
-      otros: "📌"
-    };
-    return iconos[categoria] || "📌";
-  };
-
-  return (
-    <div style={{ padding: '20px' }}>
-      <style>{`
-        .caja-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 30px;
-          flex-wrap: wrap;
-          gap: 20px;
-        }
-
-        .header-actions {
-          display: flex;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-
-        .btn-apertura-caja {
-          padding: 12px 24px;
-          background: #4caf50;
-          color: white;
-          border: none;
-          border-radius: 8px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: all 0.2s;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 16px;
-        }
-
-        .btn-apertura-caja:hover {
-          background: #45a049;
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
-        }
-
-        .btn-cierre-caja {
-          padding: 12px 24px;
-          background: #f44336;
-          color: white;
-          border: none;
-          border-radius: 8px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: all 0.2s;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 16px;
-        }
-
-        .btn-cierre-caja:hover {
-          background: #d32f2f;
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
-        }
-
-        .btn-nuevo-movimiento {
-          padding: 12px 24px;
-          background: #ffc107;
-          color: #000;
-          border: none;
-          border-radius: 8px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: all 0.2s;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 16px;
-        }
-
-        .btn-nuevo-movimiento:hover {
-          background: #ffca28;
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
-        }
-
-        .btn-nuevo-movimiento:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-          transform: none;
-        }
-
-        .estado-caja {
-          background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
-          padding: 20px;
-          border-radius: 12px;
-          border: 2px solid;
-          margin-bottom: 20px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 16px;
-        }
-
-        .estado-caja.abierta {
-          border-color: #4caf50;
-        }
-
-        .estado-caja.cerrada {
-          border-color: #f44336;
-        }
-
-        .estado-info {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .estado-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 16px;
-          border-radius: 20px;
-          font-weight: 700;
-          font-size: 14px;
-          width: fit-content;
-        }
-
-        .estado-badge.abierta {
-          background: rgba(76, 175, 80, 0.2);
-          color: #4caf50;
-        }
-
-        .estado-badge.cerrada {
-          background: rgba(244, 67, 54, 0.2);
-          color: #f44336;
-        }
-
-        .turno-info {
-          color: #aaa;
-          font-size: 14px;
-        }
-
-        .efectivo-caja {
-          text-align: right;
-        }
-
-        .efectivo-label {
-          color: #aaa;
-          font-size: 14px;
-          margin-bottom: 4px;
-        }
-
-        .efectivo-monto {
-          font-size: 32px;
-          font-weight: 700;
-          color: #4caf50;
-        }
-
-        .stats-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-          gap: 20px;
-          margin-bottom: 30px;
-        }
-
-        .stat-card-caja {
-          background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
-          padding: 24px;
-          border-radius: 12px;
-          border-left: 4px solid;
-        }
-
-        .stat-card-caja.ingresos {
-          border-color: #4caf50;
-        }
-
-        .stat-card-caja.egresos {
-          border-color: #f44336;
-        }
-
-        .stat-card-caja.saldo {
-          border-color: #ffc107;
-        }
-
-        .stat-icon {
-          font-size: 32px;
-          margin-bottom: 8px;
-        }
-
-        .stat-label-caja {
-          color: #aaa;
-          font-size: 14px;
-          margin-bottom: 8px;
-        }
-
-        .stat-value-caja {
-          font-size: 32px;
-          font-weight: 700;
-        }
-
-        .filtros-section {
-          background: #2a2a2a;
-          padding: 20px;
-          border-radius: 12px;
-          margin-bottom: 30px;
-          border: 2px solid #333;
-        }
-
-        .filtros-title {
-          color: #ffc107;
-          font-weight: 600;
-          margin-bottom: 16px;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .filtros-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 16px;
-        }
-
-        .filtro-group {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .filtro-label {
-          color: #aaa;
-          font-size: 13px;
-          font-weight: 600;
-        }
-
-        .filtro-select {
-          padding: 10px 12px;
-          border: 2px solid #444;
-          border-radius: 6px;
-          background: #1a1a1a;
-          color: #fff;
-          font-size: 14px;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .filtro-select:focus {
-          outline: none;
-          border-color: #ffc107;
-        }
-
-        .filtro-input {
-          padding: 10px 12px;
-          border: 2px solid #444;
-          border-radius: 6px;
-          background: #1a1a1a;
-          color: #fff;
-          font-size: 14px;
-          transition: all 0.2s;
-        }
-
-        .filtro-input:focus {
-          outline: none;
-          border-color: #ffc107;
-        }
-
-        .resultados-info {
-          background: rgba(255, 193, 7, 0.1);
-          border: 1px solid #ffc107;
-          border-radius: 8px;
-          padding: 16px;
-          margin-bottom: 20px;
-          display: flex;
-          justify-content: space-around;
-          flex-wrap: wrap;
-          gap: 16px;
-        }
-
-        .resultado-item {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-        }
-
-        .resultado-label {
-          color: #aaa;
-          font-size: 12px;
-          margin-bottom: 4px;
-        }
-
-        .resultado-valor {
-          font-size: 20px;
-          font-weight: 700;
-        }
-
-        .movimientos-lista {
-          display: grid;
-          gap: 16px;
-        }
-
-        .movimiento-card {
-          background: #2a2a2a;
-          border-radius: 12px;
-          overflow: hidden;
-          border: 2px solid #333;
-          transition: all 0.3s;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .movimiento-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-          border-color: #ffc107;
-        }
-
-        .movimiento-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 16px 20px;
-          background: rgba(255, 193, 7, 0.05);
-        }
-
-        .movimiento-tipo-badge {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 16px;
-          border-radius: 20px;
-          font-weight: 600;
-          font-size: 14px;
-          color: white;
-        }
-
-        .movimiento-monto {
-          font-size: 24px;
-          font-weight: 700;
-        }
-
-        .movimiento-body {
-          padding: 20px;
-          display: grid;
-          gap: 12px;
-        }
-
-        .movimiento-info-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 8px 0;
-        }
-
-        .info-label {
-          color: #aaa;
-          font-size: 14px;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .info-value {
-          color: #fff;
-          font-weight: 600;
-        }
-
-        .movimiento-descripcion {
-          background: #1a1a1a;
-          padding: 12px;
-          border-radius: 8px;
-          color: #ccc;
-          font-size: 14px;
-          border-left: 3px solid #ffc107;
-        }
-
-        .movimiento-footer {
-          display: flex;
-          gap: 8px;
-          padding: 16px 20px;
-          background: #1a1a1a;
-          border-top: 1px solid #333;
-        }
-
-        .btn-accion {
-          flex: 1;
-          padding: 10px;
-          border: none;
-          border-radius: 6px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          font-size: 14px;
-        }
-
-        .btn-editar {
-          background: #2196f3;
-          color: white;
-        }
-
-        .btn-editar:hover {
-          background: #1976d2;
-        }
-
-        .btn-eliminar {
-          background: #f44336;
-          color: white;
-        }
-
-        .btn-eliminar:hover {
-          background: #d32f2f;
-        }
-
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.8);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          padding: 20px;
-        }
-
-        .modal-content {
-          background: #2a2a2a;
-          border-radius: 16px;
-          max-width: 600px;
-          width: 100%;
-          max-height: 90vh;
-          overflow-y: auto;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-        }
-
-        .modal-header {
-          padding: 24px;
-          border-bottom: 1px solid #333;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .modal-title {
-          font-size: 20px;
-          font-weight: 700;
-          color: #ffc107;
-        }
-
-        .btn-cerrar {
-          background: none;
-          border: none;
-          color: #aaa;
-          font-size: 28px;
-          cursor: pointer;
-          width: 32px;
-          height: 32px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 4px;
-        }
-
-        .btn-cerrar:hover {
-          background: #333;
-          color: #fff;
-        }
-
-        .modal-body {
-          padding: 24px;
-        }
-
-        .form-row {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 16px;
-          margin-bottom: 20px;
-        }
-
-        .form-group {
-          margin-bottom: 20px;
-        }
-
-        .form-label {
-          display: block;
-          color: #ffc107;
-          font-weight: 600;
-          margin-bottom: 8px;
-          font-size: 14px;
-        }
-
-        .form-input {
-          width: 100%;
-          padding: 12px 16px;
-          border: 2px solid #444;
-          border-radius: 8px;
-          background: #1a1a1a;
-          color: #fff;
-          font-size: 16px;
-          transition: all 0.2s;
-        }
-
-        .form-input:focus {
-          outline: none;
-          border-color: #ffc107;
-          box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.1);
-        }
-
-        .form-textarea {
-          width: 100%;
-          padding: 12px 16px;
-          border: 2px solid #444;
-          border-radius: 8px;
-          background: #1a1a1a;
-          color: #fff;
-          font-size: 16px;
-          transition: all 0.2s;
-          resize: vertical;
-          min-height: 80px;
-        }
-
-        .form-textarea:focus {
-          outline: none;
-          border-color: #ffc107;
-          box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.1);
-        }
-
-        .info-box-cierre {
-          background: rgba(244, 67, 54, 0.1);
-          border: 1px solid #f44336;
-          border-radius: 8px;
-          padding: 16px;
-          margin-bottom: 20px;
-        }
-
-        .info-box-cierre .info-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          color: #fff;
-        }
-
-        .diferencia-positiva {
-          color: #4caf50 !important;
-        }
-
-        .diferencia-negativa {
-          color: #f44336 !important;
-        }
-
-        .modal-footer {
-          padding: 24px;
-          border-top: 1px solid #333;
-          display: flex;
-          gap: 12px;
-        }
-
-        .btn-modal {
-          flex: 1;
-          padding: 14px;
-          border: none;
-          border-radius: 8px;
-          font-weight: 600;
-          font-size: 16px;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .btn-cancelar {
-          background: #444;
-          color: #fff;
-        }
-
-        .btn-cancelar:hover {
-          background: #555;
-        }
-
-        .btn-confirmar {
-          background: #ffc107;
-          color: #000;
-        }
-
-        .btn-confirmar:hover {
-          background: #ffca28;
-          transform: translateY(-2px);
-        }
-
-        .btn-confirmar:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .empty-state {
-          text-align: center;
-          padding: 60px 20px;
-          color: #aaa;
-        }
-
-        .empty-icon {
-          font-size: 64px;
-          margin-bottom: 16px;
-        }
-
-        @media (max-width: 768px) {
-          .caja-header {
-            flex-direction: column;
-            align-items: stretch;
-          }
-
-          .header-actions {
-            flex-direction: column;
-          }
-
-          .form-row {
-            grid-template-columns: 1fr;
-          }
-
-          .modal-footer {
-            flex-direction: column;
-          }
-
-          .movimiento-footer {
-            flex-direction: column;
-          }
-
-          .estado-caja {
-            flex-direction: column;
-            text-align: center;
-          }
-
-          .efectivo-caja {
-            text-align: center;
-          }
-        }
-      `}</style>
-
-      <div className="caja-header">
-        <h2 style={{ margin: 0, color: '#fff' }}>💰 Movimientos de Caja</h2>
-        <div className="header-actions">
-          {!cajaAbierta ? (
-            <button className="btn-apertura-caja" onClick={() => setModalApertura(true)}>
-              🔓 Abrir Caja
+ 
+  return ( 
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-4 md:p-8">
+      {/* Header */}
+      <div className="max-w-7xl mx-auto mb-8">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 flex items-center gap-3">
+              <DollarSign className="w-10 h-10 text-yellow-400" />
+              Sistema de Caja
+            </h1>
+            <p className="text-gray-400">Gestión profesional de movimientos</p>
+          </div>
+          
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setModalHistorial(true)}
+              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-purple-800 transition-all shadow-lg hover:shadow-purple-500/50 flex items-center gap-2"
+            >
+              <FileText className="w-5 h-5" />
+              Historial de Cierres
             </button>
-          ) : (
-            <>
-              <button className="btn-cierre-caja" onClick={prepararCierreCaja}>
-                🔒 Cerrar Caja
+            
+            {!cajaAbierta ? (
+              <button
+                onClick={() => setModalApertura(true)}
+                className="px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg font-semibold hover:from-green-700 hover:to-green-800 transition-all shadow-lg hover:shadow-green-500/50 flex items-center gap-2"
+              >
+                <Unlock className="w-5 h-5" />
+                Abrir Caja
               </button>
-              <button className="btn-nuevo-movimiento" onClick={abrirModalNuevo}>
-                ➕ Nuevo Movimiento
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {cajaAbierta && turnoActual && (
-        <div className="estado-caja abierta">
-          <div className="estado-info">
-            <div className="estado-badge abierta">
-              🟢 Caja Abierta
-            </div>
-            <div className="turno-info">
-              Abierta el: {formatearFechaHora(turnoActual.fechaApertura)}
-            </div>
-            <div className="turno-info">
-              Usuario: {turnoActual.usuario}
-            </div>
-            <div className="turno-info">
-              Monto inicial: ${turnoActual.montoApertura.toLocaleString('es-AR', {minimumFractionDigits: 2})}
-            </div>
-          </div>
-          <div className="efectivo-caja">
-            <div className="efectivo-label">Efectivo en Caja</div>
-            <div className="efectivo-monto">
-              ${calcularEfectivoEnCaja().toLocaleString('es-AR', {minimumFractionDigits: 2})}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!cajaAbierta && (
-        <div className="estado-caja cerrada">
-          <div className="estado-info">
-            <div className="estado-badge cerrada">
-              🔴 Caja Cerrada
-            </div>
-            <div className="turno-info">
-              Debes abrir la caja para comenzar a operar
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="stats-grid">
-        <div className="stat-card-caja ingresos">
-          <div className="stat-icon">📈</div>
-          <div className="stat-label-caja">Total Ingresos</div>
-          <div className="stat-value-caja" style={{ color: '#4caf50' }}>
-            ${totalIngresos.toLocaleString('es-AR', {minimumFractionDigits: 2})}
-          </div>
-        </div>
-        <div className="stat-card-caja egresos">
-          <div className="stat-icon">📉</div>
-          <div className="stat-label-caja">Total Egresos</div>
-          <div className="stat-value-caja" style={{ color: '#f44336' }}>
-            ${totalEgresos.toLocaleString('es-AR', {minimumFractionDigits: 2})}
-          </div>
-        </div>
-        <div className="stat-card-caja saldo">
-          <div className="stat-icon">💰</div>
-          <div className="stat-label-caja">Saldo en Caja</div>
-          <div className="stat-value-caja" style={{ color: saldoCaja >= 0 ? '#ffc107' : '#f44336' }}>
-            ${saldoCaja.toLocaleString('es-AR', {minimumFractionDigits: 2})}
+            ) : (
+              <>
+                <button
+                  onClick={prepararCierreCaja}
+                  className="px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-semibold hover:from-red-700 hover:to-red-800 transition-all shadow-lg hover:shadow-red-500/50 flex items-center gap-2"
+                >
+                  <Lock className="w-5 h-5" />
+                  Cerrar Caja
+                </button>
+                <button
+                  onClick={abrirModalNuevo}
+                  className="px-6 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 text-black rounded-lg font-semibold hover:from-yellow-600 hover:to-yellow-700 transition-all shadow-lg hover:shadow-yellow-500/50 flex items-center gap-2"
+                >
+                  <Plus className="w-5 h-5" />
+                  Nuevo Movimiento
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="filtros-section">
-        <div className="filtros-title">🔍 Filtros</div>
-        <div className="filtros-grid">
-          <div className="filtro-group">
-            <label className="filtro-label">Tipo</label>
-            <select 
-              className="filtro-select"
-              value={filtroTipo}
-              onChange={(e) => setFiltroTipo(e.target.value)}
-            >
-              <option value="todos">Todos</option>
-              <option value="ingreso">Ingresos</option>
-              <option value="egreso">Egresos</option>
-            </select>
-          </div>
-
-          <div className="filtro-group">
-            <label className="filtro-label">Método de Pago</label>
-            <select 
-              className="filtro-select"
-              value={filtroMetodo}
-              onChange={(e) => setFiltroMetodo(e.target.value)}
-            >
-              <option value="todos">Todos</option>
-              <option value="efectivo">Efectivo</option>
-              <option value="tarjeta">Tarjeta</option>
-              <option value="transferencia">Transferencia</option>
-              <option value="mercadopago">Mercado Pago</option>
-            </select>
-          </div>
-
-          <div className="filtro-group">
-            <label className="filtro-label">Categoría</label>
-            <select 
-              className="filtro-select"
-              value={filtroCategoria}
-              onChange={(e) => setFiltroCategoria(e.target.value)}
-            >
-              <option value="todos">Todas</option>
-              <option value="servicios">Servicios</option>
-              <option value="productos">Productos</option>
-              <option value="gastos">Gastos</option>
-              <option value="sueldos">Sueldos</option>
-              <option value="alquiler">Alquiler</option>
-              <option value="servicios_publicos">Servicios Públicos</option>
-              <option value="otros">Otros</option>
-            </select>
-          </div>
-
-          <div className="filtro-group">
-            <label className="filtro-label">Desde</label>
-            <input 
-              type="date"
-              className="filtro-input"
-              value={fechaDesde}
-              onChange={(e) => setFechaDesde(e.target.value)}
-            />
-          </div>
-
-          <div className="filtro-group">
-            <label className="filtro-label">Hasta</label>
-            <input 
-              type="date"
-              className="filtro-input"
-              value={fechaHasta}
-              onChange={(e) => setFechaHasta(e.target.value)}
-            />
+      {/* Estado de Caja */}
+      <div className="max-w-7xl mx-auto mb-8">
+        <div className={`rounded-xl p-6 border-2 ${cajaAbierta ? 'bg-gradient-to-r from-green-900/20 to-green-800/20 border-green-500' : 'bg-gradient-to-r from-red-900/20 to-red-800/20 border-red-500'}`}>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="flex-1">
+              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full font-bold mb-3 ${cajaAbierta ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                {cajaAbierta ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                {cajaAbierta ? 'Caja Abierta' : 'Caja Cerrada'}
+              </div>
+              
+              {cajaAbierta && turnoActual && (
+                <div className="space-y-1 text-gray-300">
+                  <p className="flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    Abierta: {formatearFechaHora(turnoActual.fechaApertura)}
+                  </p>
+                  <p>Usuario: {turnoActual.usuario}</p>
+                  <p>Monto inicial: ${turnoActual.montoApertura.toLocaleString('es-AR', {minimumFractionDigits: 2})}</p>
+                </div>
+              )}
+              
+              {!cajaAbierta && (
+                <p className="text-gray-400">Debes abrir la caja para comenzar a operar</p>
+              )}
+            </div>
+            
+            {cajaAbierta && (
+              <div className="text-right">
+                <p className="text-gray-400 text-sm mb-1">Efectivo en Caja</p>
+                <p className="text-4xl font-bold text-green-400">
+                  ${calcularEfectivoEnCaja().toLocaleString('es-AR', {minimumFractionDigits: 2})}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
+      {/* Estadísticas */}
+      <div className="max-w-7xl mx-auto mb-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-gradient-to-br from-green-900/20 to-green-800/20 border-2 border-green-500 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <TrendingUp className="w-8 h-8 text-green-400" />
+            <div className="text-right">
+              <p className="text-gray-400 text-sm">Total Ingresos</p>
+              <p className="text-3xl font-bold text-green-400">
+                ${totalIngresos.toLocaleString('es-AR', {minimumFractionDigits: 2})}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-red-900/20 to-red-800/20 border-2 border-red-500 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <TrendingDown className="w-8 h-8 text-red-400" />
+            <div className="text-right">
+              <p className="text-gray-400 text-sm">Total Egresos</p>
+              <p className="text-3xl font-bold text-red-400">
+                ${totalEgresos.toLocaleString('es-AR', {minimumFractionDigits: 2})}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-yellow-900/20 to-yellow-800/20 border-2 border-yellow-500 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <DollarSign className="w-8 h-8 text-yellow-400" />
+            <div className="text-right">
+              <p className="text-gray-400 text-sm">Saldo</p>
+              <p className={`text-3xl font-bold ${saldoCaja >= 0 ? 'text-yellow-400' : 'text-red-400'}`}>
+                ${saldoCaja.toLocaleString('es-AR', {minimumFractionDigits: 2})}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="max-w-7xl mx-auto mb-8">
+        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+          <div className="flex items-center gap-2 mb-4">
+            <Filter className="w-5 h-5 text-yellow-400" />
+            <h3 className="text-lg font-semibold text-white">Filtros</h3>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Tipo</label>
+              <select 
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-yellow-400 focus:outline-none"
+                value={filtroTipo}
+                onChange={(e) => setFiltroTipo(e.target.value)}
+              >
+                <option value="todos">Todos</option>
+                <option value="ingreso">Ingresos</option>
+                <option value="egreso">Egresos</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Método</label>
+              <select 
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-yellow-400 focus:outline-none"
+                value={filtroMetodo}
+                onChange={(e) => setFiltroMetodo(e.target.value)}
+              >
+                <option value="todos">Todos</option>
+                <option value="efectivo">Efectivo</option>
+                <option value="tarjeta">Tarjeta</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="mercadopago">Mercado Pago</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Categoría</label>
+              <select 
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-yellow-400 focus:outline-none"
+                value={filtroCategoria}
+                onChange={(e) => setFiltroCategoria(e.target.value)}
+              >
+                <option value="todos">Todas</option>
+                <option value="servicios">Servicios</option>
+                <option value="productos">Productos</option>
+                <option value="gastos">Gastos</option>
+                <option value="sueldos">Sueldos</option>
+                <option value="alquiler">Alquiler</option>
+                <option value="servicios_publicos">Servicios Públicos</option>
+                <option value="otros">Otros</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Desde</label>
+              <input 
+                type="date"
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-yellow-400 focus:outline-none"
+                value={fechaDesde}
+                onChange={(e) => setFechaDesde(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Hasta</label>
+              <input 
+                type="date"
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-yellow-400 focus:outline-none"
+                value={fechaHasta}
+                onChange={(e) => setFechaHasta(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Resumen de filtros */}
       {movimientosFiltrados.length > 0 && (
-        <div className="resultados-info">
-          <div className="resultado-item">
-            <div className="resultado-label">Movimientos</div>
-            <div className="resultado-valor" style={{ color: '#ffc107' }}>
-              {movimientosFiltrados.length}
-            </div>
-          </div>
-          <div className="resultado-item">
-            <div className="resultado-label">Ingresos Filtrados</div>
-            <div className="resultado-valor" style={{ color: '#4caf50' }}>
-              ${totalIngresosFiltrados.toLocaleString('es-AR', {minimumFractionDigits: 2})}
-            </div>
-          </div>
-          <div className="resultado-item">
-            <div className="resultado-label">Egresos Filtrados</div>
-            <div className="resultado-valor" style={{ color: '#f44336' }}>
-              ${totalEgresosFiltrados.toLocaleString('es-AR', {minimumFractionDigits: 2})}
+        <div className="max-w-7xl mx-auto mb-8">
+          <div className="bg-yellow-500/10 border border-yellow-500 rounded-xl p-4">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <p className="text-gray-400 text-sm">Movimientos</p>
+                <p className="text-2xl font-bold text-yellow-400">{movimientosFiltrados.length}</p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm">Ingresos</p>
+                <p className="text-2xl font-bold text-green-400">${totalIngresosFiltrados.toLocaleString('es-AR', {minimumFractionDigits: 2})}</p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm">Egresos</p>
+                <p className="text-2xl font-bold text-red-400">${totalEgresosFiltrados.toLocaleString('es-AR', {minimumFractionDigits: 2})}</p>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {loading ? (
-        <div className="empty-state">Cargando movimientos...</div>
-      ) : movimientosFiltrados.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-icon">📊</div>
-          <p>No hay movimientos registrados</p>
-        </div>
-      ) : (
-        <div className="movimientos-lista">
-          {movimientosFiltrados.map(mov => (
-            <div key={mov.id} className="movimiento-card">
-              <div className="movimiento-header">
-                <div 
-                  className="movimiento-tipo-badge"
-                  style={{ backgroundColor: getTipoColor(mov.tipo) }}
-                >
-                  <span>{getTipoIcon(mov.tipo)}</span>
-                  <span>{mov.tipo === "ingreso" ? "INGRESO" : "EGRESO"}</span>
-                </div>
-                <div 
-                  className="movimiento-monto"
-                  style={{ color: getTipoColor(mov.tipo) }}
-                >
-                  {mov.tipo === "ingreso" ? "+" : "-"}${parseFloat(mov.monto).toLocaleString('es-AR', {minimumFractionDigits: 2})}
-                </div>
-              </div>
-
-              <div className="movimiento-body">
-                {mov.descripcion && (
-                  <div className="movimiento-descripcion">
-                    {mov.descripcion}
+      {/* Lista de Movimientos */}
+      <div className="max-w-7xl mx-auto">
+        {loading ? (
+          <div className="text-center text-gray-400 py-12">
+            Cargando movimientos...
+          </div>
+        ) : movimientosFiltrados.length === 0 ? (
+          <div className="text-center text-gray-400 py-12">
+            <DollarSign className="w-16 h-16 mx-auto mb-4 opacity-50" />
+            <p>No hay movimientos registrados</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {movimientosFiltrados.map(mov => (
+              <div 
+                key={mov.id} 
+                className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 hover:border-yellow-400 transition-all overflow-hidden"
+              >
+                <div className="p-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-3 rounded-lg ${mov.tipo === 'ingreso' ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
+                        {mov.tipo === 'ingreso' ? (
+                          <TrendingUp className="w-6 h-6 text-green-400" />
+                        ) : (
+                          <TrendingDown className="w-6 h-6 text-red-400" />
+                        )}
+                      </div>
+                      <div>
+                        <p className={`text-2xl font-bold ${mov.tipo === 'ingreso' ? 'text-green-400' : 'text-red-400'}`}>
+                          {mov.tipo === 'ingreso' ? '+' : '-'}${parseFloat(mov.monto).toLocaleString('es-AR', {minimumFractionDigits: 2})}
+                        </p>
+                        <p className="text-sm text-gray-400 uppercase">{mov.tipo}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-gray-400 text-sm flex items-center gap-2 justify-end">
+                        <Calendar className="w-4 h-4" />
+                        {formatearFechaHora(mov.fecha_creacion)}
+                      </p>
+                    </div>
                   </div>
-                )}
 
-                <div className="movimiento-info-row">
-                  <span className="info-label">
-                    {getCategoriaIcon(mov.categoria)} Categoría
-                  </span>
-                  <span className="info-value">{mov.categoria || "Sin categoría"}</span>
-                </div>
+                  {mov.descripcion && (
+                    <div className="bg-gray-900/50 rounded-lg p-4 mb-4 border-l-4 border-yellow-400">
+                      <p className="text-gray-300">{mov.descripcion}</p>
+                    </div>
+                  )}
 
-                <div className="movimiento-info-row">
-                  <span className="info-label">
-                    {getMetodoIcon(mov.metodo_pago)} Método
-                  </span>
-                  <span className="info-value">{mov.metodo_pago || "No especificado"}</span>
-                </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                      <p className="text-gray-400 text-sm">Categoría</p>
+                      <p className="text-white font-semibold">{mov.categoria || "Sin categoría"}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 text-sm">Método</p>
+                      <p className="text-white font-semibold">{mov.metodo_pago || "No especificado"}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 text-sm">Fecha</p>
+                      <p className="text-white font-semibold">{formatearFecha(mov.fecha)}</p>
+                    </div>
+                  </div>
 
-                <div className="movimiento-info-row">
-                  <span className="info-label">📅 Fecha</span>
-                  <span className="info-value">
-                    {formatearFecha(mov.fecha)} {mov.hora && formatearHora(mov.hora)}
-                  </span>
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => abrirModalEditar(mov)}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      Editar
+                    </button>
+                    <button 
+                      onClick={() => eliminarMovimiento(mov.id)}
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Eliminar
+                    </button>
+                  </div>
                 </div>
               </div>
+            ))}
+          </div>
+        )}
+      </div>
 
-              <div className="movimiento-footer">
-                <button 
-                  className="btn-accion btn-editar"
-                  onClick={() => abrirModalEditar(mov)}
-                >
-                  ✏️ Editar
-                </button>
-                <button 
-                  className="btn-accion btn-eliminar"
-                  onClick={() => eliminarMovimiento(mov.id)}
-                >
-                  🗑️ Eliminar
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Modal Apertura de Caja */}
+      {/* Modal Apertura */}
       {modalApertura && (
-        <div className="modal-overlay" onClick={() => setModalApertura(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title">🔓 Apertura de Caja</div>
-              <button className="btn-cerrar" onClick={() => setModalApertura(false)}>×</button>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-2xl max-w-md w-full border-2 border-green-500 shadow-2xl shadow-green-500/20">
+            <div className="p-6 border-b border-gray-700 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Unlock className="w-6 h-6 text-green-400" />
+                Apertura de Caja
+              </h3>
+              <button onClick={() => setModalApertura(false)} className="text-gray-400 hover:text-white">
+                <X className="w-6 h-6" />
+              </button>
             </div>
 
-            <div className="modal-body">
-              <div className="form-group">
-                <label className="form-label">Monto Inicial en Efectivo</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={montoApertura}
-                  onChange={(e) => setMontoApertura(e.target.value)}
-                  placeholder="0.00"
-                  min="0"
-                  step="0.01"
-                  autoFocus
-                />
-                <small style={{ color: '#aaa', fontSize: '12px', marginTop: '8px', display: 'block' }}>
-                  Ingresa el monto en efectivo con el que inicias el turno
-                </small>
-              </div>
+            <div className="p-6">
+              <label className="block text-yellow-400 font-semibold mb-2">
+                Monto Inicial en Efectivo
+              </label>
+              <input
+                type="number"
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border-2 border-gray-600 focus:border-green-400 focus:outline-none text-lg"
+                value={montoApertura}
+                onChange={(e) => setMontoApertura(e.target.value)}
+                placeholder="0.00"
+                min="0"
+                step="0.01"
+                autoFocus
+              />
+              <p className="text-gray-400 text-sm mt-2">
+                Ingresa el monto en efectivo con el que inicias el turno
+              </p>
             </div>
 
-            <div className="modal-footer">
-              <button className="btn-modal btn-cancelar" onClick={() => setModalApertura(false)}>
+            <div className="p-6 border-t border-gray-700 flex gap-3">
+              <button
+                onClick={() => setModalApertura(false)}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-all"
+              >
                 Cancelar
               </button>
-              <button className="btn-modal btn-confirmar" onClick={abrirCaja}>
+              <button
+                onClick={abrirCaja}
+                className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white px-6 py-3 rounded-lg font-semibold transition-all"
+              >
                 Abrir Caja
               </button>
             </div>
@@ -1294,185 +745,87 @@ Diferencia: $${diferencia.toFixed(2)} ${diferencia >= 0 ? '(Sobrante)' : '(Falta
         </div>
       )}
 
-      {/* Modal Cierre de Caja */}
+      {/* Modal Cierre */}
       {modalCierre && (
-        <div className="modal-overlay" onClick={() => setModalCierre(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title">🔒 Cierre de Caja</div>
-              <button className="btn-cerrar" onClick={() => setModalCierre(false)}>×</button>
-            </div>
-
-            <div className="modal-body">
-              <div className="info-box-cierre">
-                <div className="info-row">
-                  <span>Monto inicial:</span>
-                  <strong>${turnoActual?.montoApertura.toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong>
-                </div>
-                <div className="info-row">
-                  <span>Efectivo esperado:</span>
-                  <strong>${calcularEfectivoEnCaja().toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong>
-                </div>
-                {montoCierre && (
-                  <>
-                    <div className="info-row">
-                      <span>Efectivo real:</span>
-                      <strong>${parseFloat(montoCierre).toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong>
-                    </div>
-                    <div className="info-row">
-                      <span>Diferencia:</span>
-                      <strong className={parseFloat(montoCierre) - calcularEfectivoEnCaja() >= 0 ? 'diferencia-positiva' : 'diferencia-negativa'}>
-                        ${(parseFloat(montoCierre) - calcularEfectivoEnCaja()).toLocaleString('es-AR', {minimumFractionDigits: 2})}
-                        {parseFloat(montoCierre) - calcularEfectivoEnCaja() >= 0 ? ' (Sobrante)' : ' (Faltante)'}
-                      </strong>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Efectivo Real en Caja</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={montoCierre}
-                  onChange={(e) => setMontoCierre(e.target.value)}
-                  placeholder="0.00"
-                  min="0"
-                  step="0.01"
-                  autoFocus
-                />
-                <small style={{ color: '#aaa', fontSize: '12px', marginTop: '8px', display: 'block' }}>
-                  Cuenta el efectivo físico y registra el monto exacto
-                </small>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Observaciones (opcional)</label>
-                <textarea
-                  className="form-textarea"
-                  value={observacionesCierre}
-                  onChange={(e) => setObservacionesCierre(e.target.value)}
-                  placeholder="Notas sobre el cierre de caja..."
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn-modal btn-cancelar" onClick={() => setModalCierre(false)}>
-                Cancelar
-              </button>
-              <button className="btn-modal btn-confirmar" onClick={cerrarCaja}>
-                Cerrar Caja
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-2xl max-w-md w-full border-2 border-red-500 shadow-2xl shadow-red-500/20">
+            <div className="p-6 border-b border-gray-700 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Lock className="w-6 h-6 text-red-400" />
+                Cierre de Caja
+              </h3>
+              <button onClick={() => setModalCierre(false)} className="text-gray-400 hover:text-white">
+                <X className="w-6 h-6" />
               </button>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* Modal Movimiento */}
-      {modalAbierto && (
-        <div className="modal-overlay" onClick={cerrarModal}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title">
-                {modoEdicion ? "✏️ Editar Movimiento" : "➕ Nuevo Movimiento"}
+            <div className="p-6">
+              <div className="bg-red-500/10 border border-red-500 rounded-lg p-4 mb-4">
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Monto inicial:</span>
+                    <strong className="text-white">${turnoActual?.montoApertura.toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Efectivo esperado:</span>
+                    <strong className="text-white">${calcularEfectivoEnCaja().toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong>
+                  </div>
+                  {efectivoReal && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Efectivo real:</span>
+                        <strong className="text-white">${parseFloat(efectivoReal).toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong>
+                      </div>
+                      <div className="flex justify-between pt-2 border-t border-red-500/30">
+                        <span className="text-gray-400">Diferencia:</span>
+                        <strong className={parseFloat(efectivoReal) - calcularEfectivoEnCaja() >= 0 ? 'text-green-400' : 'text-red-400'}>
+                          ${(parseFloat(efectivoReal) - calcularEfectivoEnCaja()).toLocaleString('es-AR', {minimumFractionDigits: 2})}
+                          {parseFloat(efectivoReal) - calcularEfectivoEnCaja() >= 0 ? ' ✅' : ' ⚠️'}
+                        </strong>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
-              <button className="btn-cerrar" onClick={cerrarModal}>×</button>
+
+              <label className="block text-yellow-400 font-semibold mb-2">
+                Efectivo Real en Caja
+              </label>
+              <input
+                type="number"
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border-2 border-gray-600 focus:border-red-400 focus:outline-none text-lg mb-4"
+                value={efectivoReal}
+                onChange={(e) => setEfectivoReal(e.target.value)}
+                placeholder="0.00"
+                min="0"
+                step="0.01"
+                autoFocus
+              />
+
+              <label className="block text-yellow-400 font-semibold mb-2">
+                Observaciones (opcional)
+              </label>
+              <textarea
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border-2 border-gray-600 focus:border-red-400 focus:outline-none resize-none"
+                value={observacionesCierre}
+                onChange={(e) => setObservacionesCierre(e.target.value)}
+                placeholder="Notas sobre el cierre..."
+                rows="3"
+              />
             </div>
 
-            <div className="modal-body">
-              <div className="form-row">
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Tipo de Movimiento</label>
-                  <select
-                    className="form-input"
-                    value={formData.tipo}
-                    onChange={(e) => setFormData({...formData, tipo: e.target.value})}
-                  >
-                    <option value="ingreso">📈 Ingreso</option>
-                    <option value="egreso">📉 Egreso</option>
-                  </select>
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Monto</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={formData.monto}
-                    onChange={(e) => setFormData({...formData, monto: e.target.value})}
-                    placeholder="0.00"
-                    min="0"
-                    step="0.01"
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Descripción</label>
-                <textarea
-                  className="form-textarea"
-                  value={formData.descripcion}
-                  onChange={(e) => setFormData({...formData, descripcion: e.target.value})}
-                  placeholder="Describe el motivo del movimiento..."
-                />
-              </div>
-
-              <div className="form-row">
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Categoría</label>
-                  <select
-                    className="form-input"
-                    value={formData.categoria}
-                    onChange={(e) => setFormData({...formData, categoria: e.target.value})}
-                  >
-                    <option value="servicios">✂️ Servicios</option>
-                    <option value="productos">🛍️ Productos</option>
-                    <option value="gastos">📊 Gastos</option>
-                    <option value="sueldos">👨‍💼 Sueldos</option>
-                    <option value="alquiler">🏢 Alquiler</option>
-                    <option value="servicios_publicos">💡 Servicios Públicos</option>
-                    <option value="otros">📌 Otros</option>
-                  </select>
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Método de Pago</label>
-                  <select
-                    className="form-input"
-                    value={formData.metodo_pago}
-                    onChange={(e) => setFormData({...formData, metodo_pago: e.target.value})}
-                  >
-                    <option value="efectivo">💵 Efectivo</option>
-                    <option value="tarjeta">💳 Tarjeta</option>
-                    <option value="transferencia">🏦 Transferencia</option>
-                    <option value="mercadopago">📱 Mercado Pago</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Fecha</label>
-                <input
-                  type="date"
-                  className="form-input"
-                  value={formData.fecha}
-                  onChange={(e) => setFormData({...formData, fecha: e.target.value})}
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn-modal btn-cancelar" onClick={cerrarModal}>
-                Cancelar
-              </button>
-              <button 
-                className="btn-modal btn-confirmar" 
-                onClick={guardarMovimiento}
-                disabled={guardando}
+            <div className="p-6 border-t border-gray-700 flex gap-3">
+              <button
+                onClick={() => setModalCierre(false)}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-all"
               >
-                {guardando ? "Guardando..." : modoEdicion ? "Actualizar" : "Registrar"}
+                Cancelar
+              </button>
+              <button
+                onClick={cerrarCaja}
+                className="flex-1 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white px-6 py-3 rounded-lg font-semibold transition-all"
+              >
+                Cerrar Caja
               </button>
             </div>
           </div>

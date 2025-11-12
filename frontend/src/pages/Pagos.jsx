@@ -8,8 +8,7 @@ const Pagos = () => {
   const [filtro, setFiltro] = useState("pendientes");
   const [modalAbierto, setModalAbierto] = useState(false);
   const [reservaSeleccionada, setReservaSeleccionada] = useState(null);
-  const [tipoPago, setTipoPago] = useState("seña");
-  const [montoPago, setMontoPago] = useState("");
+  const [montoPago, setMontoPago] = useState(""); 
   const [metodoPago, setMetodoPago] = useState("efectivo");
   const [guardando, setGuardando] = useState(false);
 
@@ -49,16 +48,9 @@ const Pagos = () => {
     }
   };
 
-  const abrirModalPago = (reserva, tipo) => {
+  const abrirModalPago = (reserva) => {
     setReservaSeleccionada(reserva);
-    setTipoPago(tipo);
-    
-    if (tipo === "seña") {
-      setMontoPago(Math.round(reserva.total * 0.3).toString());
-    } else {
-      setMontoPago(reserva.pendiente.toString());
-    }
-    
+    setMontoPago(reserva.pendiente.toString());
     setModalAbierto(true);
   };
 
@@ -88,13 +80,13 @@ const Pagos = () => {
 
       if (!res.ok) {
         const errorData = await res.text();
-        throw new Error(`Error en caja: ${res.status} - ${errorData}`);
+        console.warn(`Advertencia en caja: ${res.status} - ${errorData}`);
       }
 
-      return await res.json();
+      return res.ok ? await res.json() : null;
     } catch (err) {
       console.error("Error registrando en caja:", err);
-      throw err;
+      return null;
     }
   };
 
@@ -105,28 +97,33 @@ const Pagos = () => {
     }
 
     const monto = parseFloat(montoPago);
-    const maxPermitido = tipoPago === "seña" 
-      ? reservaSeleccionada.total - reservaSeleccionada.seña
-      : reservaSeleccionada.pendiente;
-
-    if (monto > maxPermitido) {
-      alert(`El monto no puede superar $${maxPermitido}`);
+    
+    if (monto > reservaSeleccionada.pendiente) {
+      alert(`El monto no puede superar el pendiente: $${reservaSeleccionada.pendiente.toFixed(2)}`);
       return;
     }
 
     setGuardando(true);
     try {
-      // 1. Actualizar la reserva
-      const campo = tipoPago === "seña" ? "seña" : "saldo_pagado";
-      const nuevoValor = tipoPago === "seña" 
-        ? reservaSeleccionada.seña + monto
-        : reservaSeleccionada.saldo_pagado + monto;
+      // Calcular nuevos valores
+      const nuevoSaldoPagado = parseFloat(reservaSeleccionada.saldo_pagado || 0) + monto;
 
+      console.log("📊 Valores calculados:", {
+        monto,
+        saldoActual: reservaSeleccionada.saldo_pagado,
+        nuevoSaldoPagado,
+        total: reservaSeleccionada.total,
+        seña: reservaSeleccionada.seña
+      });
+
+      // Preparar datos para actualizar (NO enviar estado_pago, se calcula en el backend)
       const body = {
-        [campo]: nuevoValor,
+        saldo_pagado: parseFloat(nuevoSaldoPagado.toFixed(2)),
         metodo_pago: metodoPago,
         fecha_pago: new Date().toISOString()
       };
+
+      console.log("📤 Enviando al backend:", body);
 
       const res = await fetch(`${API_URL}/reservas/${reservaSeleccionada.id}/`, {
         method: "PATCH",
@@ -134,21 +131,27 @@ const Pagos = () => {
         body: JSON.stringify(body)
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("❌ Error en la respuesta:", errorText);
+        throw new Error(`HTTP ${res.status}: ${errorText}`);
+      }
 
-      // 2. Registrar en caja
-      const descripcionCaja = tipoPago === "seña" 
-        ? `Seña - ${reservaSeleccionada.nombre_cliente} ${reservaSeleccionada.apellido_cliente}`
-        : `Pago saldo - ${reservaSeleccionada.nombre_cliente} ${reservaSeleccionada.apellido_cliente}`;
-      
+      const reservaActualizada = await res.json();
+      console.log("✅ Reserva actualizada:", reservaActualizada);
+
+      // Registrar en caja
+      const descripcionCaja = `Pago saldo - ${reservaSeleccionada.nombre_cliente} ${reservaSeleccionada.apellido_cliente}`;
       await registrarMovimientoCaja(monto, descripcionCaja, metodoPago);
 
-      alert(`${tipoPago === "seña" ? "Seña" : "Saldo"} registrado exitosamente en reserva y caja`);
+      alert(`✅ Pago de $${monto.toFixed(2)} registrado exitosamente`);
       cerrarModal();
-      cargarReservas();
+      
+      // Recargar reservas para actualizar la vista
+      await cargarReservas();
     } catch (err) {
-      console.error("Error registrando pago:", err);
-      alert("Error al registrar el pago. Intenta nuevamente.");
+      console.error("❌ Error registrando pago:", err);
+      alert(`❌ Error al registrar el pago: ${err.message}`);
     } finally {
       setGuardando(false);
     }
@@ -192,9 +195,9 @@ const Pagos = () => {
 
   const getEstadoPagoTexto = (estadoPago) => {
     switch(estadoPago) {
-      case 'pagado': return 'Pagado';
-      case 'parcial': return 'Pago parcial';
-      case 'sin_pagar': return 'Sin pagar';
+      case 'pagado': return '✅ Pagado';
+      case 'parcial': return '⏳ Pago parcial';
+      case 'sin_pagar': return '❌ Sin pagar';
       default: return estadoPago;
     }
   };
@@ -374,6 +377,11 @@ const Pagos = () => {
           color: #f44336;
         }
 
+        .linea-pago.pagado-item {
+          background: rgba(76, 175, 80, 0.1);
+          border: 1px solid #4caf50;
+        }
+
         .label-pago {
           color: #aaa;
           font-size: 14px;
@@ -402,17 +410,7 @@ const Pagos = () => {
           justify-content: center;
           gap: 8px;
         }
-
-        .btn-seña {
-          background: #2196f3;
-          color: white;
-        }
-
-        .btn-seña:hover {
-          background: #1976d2;
-          transform: translateY(-2px);
-        }
-
+ 
         .btn-saldo {
           background: #4caf50;
           color: white;
@@ -620,7 +618,7 @@ const Pagos = () => {
       `}</style>
 
       <div className="pagos-header">
-        <h2 style={{ margin: 0, color: '#fff' }}>Gestión de Pagos</h2>
+        <h2 style={{ margin: 0, color: '#fff' }}>💰 Gestión de Pagos</h2>
         <div className="filtros-pagos">
           <button 
             className={`filtro-btn ${filtro === "pendientes" ? "active" : ""}`}
@@ -645,15 +643,15 @@ const Pagos = () => {
 
       <div className="stats-row">
         <div className="stat-card-pago">
-          <div className="stat-label">Total Recaudado</div>
-          <div className="stat-value">${totalRecaudado.toLocaleString()}</div>
+          <div className="stat-label">💵 Total Recaudado</div>
+          <div className="stat-value">${totalRecaudado.toLocaleString('es-AR', {minimumFractionDigits: 2})}</div>
         </div>
         <div className="stat-card-pago">
-          <div className="stat-label">Pendiente de Cobro</div>
-          <div className="stat-value" style={{ color: '#f44336' }}>${totalPendiente.toLocaleString()}</div>
+          <div className="stat-label">⏳ Pendiente de Cobro</div>
+          <div className="stat-value" style={{ color: '#f44336' }}>${totalPendiente.toLocaleString('es-AR', {minimumFractionDigits: 2})}</div>
         </div>
         <div className="stat-card-pago">
-          <div className="stat-label">Reservas con Seña</div>
+          <div className="stat-label">✅ Reservas con Seña</div>
           <div className="stat-value">{reservasConSeña}</div>
         </div>
       </div>
@@ -678,7 +676,7 @@ const Pagos = () => {
                     📅 {formatearFecha(reserva.fecha)} • 🕐 {formatearHora(reserva.horario)}
                   </div>
                   <div className="fecha-hora-pago">
-                    👤 {reserva.barbero_nombre || "Sin asignar"}
+                    ✂️ {reserva.barbero_nombre || "Sin asignar"}
                   </div>
                 </div>
                 <div 
@@ -692,12 +690,12 @@ const Pagos = () => {
               <div className="reserva-pago-body">
                 <div className="servicios-pago">
                   <strong style={{ color: '#ffc107', display: 'block', marginBottom: '10px' }}>
-                    ✂️ Servicios:
+                    🧴 Servicios:
                   </strong>
                   {reserva.servicios?.map((servicio, idx) => (
                     <div key={idx} className="servicio-item-pago">
                       <span>{servicio.nombre}</span>
-                      <span>${parseFloat(servicio.precio || 0).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                      <span>${parseFloat(servicio.precio || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</span>
                     </div>
                   ))}
                 </div>
@@ -705,23 +703,23 @@ const Pagos = () => {
                 <div className="desglose-pago">
                   <div className="linea-pago total">
                     <span className="label-pago">💵 Total del Servicio</span>
-                    <span className="monto-pago">${parseFloat(reserva.total || 0).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                    <span className="monto-pago">${parseFloat(reserva.total || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</span>
                   </div>
 
                   {parseFloat(reserva.seña || 0) > 0 && (
-                    <div className="linea-pago">
+                    <div className="linea-pago pagado-item">
                       <span className="label-pago">✅ Seña Pagada</span>
                       <span className="monto-pago" style={{ color: '#4caf50' }}>
-                        ${parseFloat(reserva.seña).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                        ${parseFloat(reserva.seña).toLocaleString('es-AR', {minimumFractionDigits: 2})}
                       </span>
                     </div>
                   )}
 
                   {parseFloat(reserva.saldo_pagado || 0) > 0 && (
-                    <div className="linea-pago">
+                    <div className="linea-pago pagado-item">
                       <span className="label-pago">✅ Saldo Pagado</span>
                       <span className="monto-pago" style={{ color: '#4caf50' }}>
-                        ${parseFloat(reserva.saldo_pagado).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                        ${parseFloat(reserva.saldo_pagado).toLocaleString('es-AR', {minimumFractionDigits: 2})}
                       </span>
                     </div>
                   )}
@@ -729,7 +727,7 @@ const Pagos = () => {
                   {parseFloat(reserva.pendiente || 0) > 0 && (
                     <div className="linea-pago pendiente">
                       <span className="label-pago">⚠️ Pendiente</span>
-                      <span className="monto-pago">${parseFloat(reserva.pendiente).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                      <span className="monto-pago">${parseFloat(reserva.pendiente).toLocaleString('es-AR', {minimumFractionDigits: 2})}</span>
                     </div>
                   )}
                 </div>
@@ -737,15 +735,8 @@ const Pagos = () => {
                 {parseFloat(reserva.pendiente || 0) > 0 && (
                   <div className="acciones-pago">
                     <button 
-                      className="btn-pago btn-seña"
-                      onClick={() => abrirModalPago(reserva, "seña")}
-                      disabled={parseFloat(reserva.seña || 0) >= parseFloat(reserva.total || 0)}
-                    >
-                      💳 Registrar Seña
-                    </button>
-                    <button 
                       className="btn-pago btn-saldo"
-                      onClick={() => abrirModalPago(reserva, "saldo")}
+                      onClick={() => abrirModalPago(reserva)}
                     >
                       💵 Pagar Saldo
                     </button>
@@ -762,7 +753,7 @@ const Pagos = () => {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-title">
-                {tipoPago === "seña" ? "💳 Registrar Seña" : "💵 Registrar Pago de Saldo"}
+                💵 Registrar Pago de Saldo
               </div>
               <button className="btn-cerrar" onClick={cerrarModal}>×</button>
             </div>
@@ -779,29 +770,29 @@ const Pagos = () => {
                 </div>
                 <div className="info-item">
                   <span>Total del servicio:</span>
-                  <strong>${parseFloat(reservaSeleccionada.total || 0).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                  <strong>${parseFloat(reservaSeleccionada.total || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong>
                 </div>
                 {parseFloat(reservaSeleccionada.seña || 0) > 0 && (
                   <div className="info-item">
                     <span>Seña ya pagada:</span>
-                    <strong style={{ color: '#4caf50' }}>${parseFloat(reservaSeleccionada.seña).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                    <strong style={{ color: '#4caf50' }}>${parseFloat(reservaSeleccionada.seña).toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong>
                   </div>
                 )}
                 {parseFloat(reservaSeleccionada.saldo_pagado || 0) > 0 && (
                   <div className="info-item">
                     <span>Saldo ya pagado:</span>
-                    <strong style={{ color: '#4caf50' }}>${parseFloat(reservaSeleccionada.saldo_pagado).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                    <strong style={{ color: '#4caf50' }}>${parseFloat(reservaSeleccionada.saldo_pagado).toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong>
                   </div>
                 )}
                 <div className="info-item">
                   <span>Pendiente:</span>
-                  <strong style={{ color: '#f44336' }}>${parseFloat(reservaSeleccionada.pendiente || 0).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>
+                  <strong style={{ color: '#f44336' }}>${parseFloat(reservaSeleccionada.pendiente || 0).toLocaleString('es-AR', {minimumFractionDigits: 2})}</strong>
                 </div>
               </div>
 
               <div className="form-group">
                 <label className="form-label">
-                  Monto a {tipoPago === "seña" ? "cobrar como seña" : "cobrar"}
+                  Monto a cobrar
                 </label>
                 <input
                   type="number"
@@ -838,7 +829,7 @@ const Pagos = () => {
                 onClick={registrarPago}
                 disabled={guardando}
               >
-                {guardando ? "Guardando..." : "Confirmar Pago"}
+                {guardando ? "Guardando..." : "✅ Confirmar Pago"}
               </button>
             </div>
           </div>

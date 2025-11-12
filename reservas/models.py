@@ -1,6 +1,7 @@
+# -*- coding: utf-8 -*-
 from django.db import models
 from django.contrib.auth.models import User
-from django.utils import timezone
+from django.core.validators import MinValueValidator
 from decimal import Decimal
 
 
@@ -13,6 +14,12 @@ class Reserva(models.Model):
         ('confirmada', 'Confirmada'),
         ('rechazada', 'Rechazada'),
         ('cancelada', 'Cancelada'),
+    ]
+    
+    ESTADO_PAGO_CHOICES = [
+        ('sin_pagar', 'Sin Pagar'),
+        ('parcial', 'Pago Parcial'),
+        ('pagado', 'Pagado'),
     ]
     
     METODO_PAGO_CHOICES = [
@@ -51,7 +58,7 @@ class Reserva(models.Model):
         verbose_name="Hora de la cita"
     )
     
-    # ✅ ForeignKey al barbero (User)
+    # ForeignKey al barbero (User)
     barbero = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
@@ -70,28 +77,34 @@ class Reserva(models.Model):
     
     servicios = models.JSONField(
         verbose_name="Servicios contratados",
-        help_text="Lista de servicios en formato JSON"
+        help_text="Lista de servicios en formato JSON",
+        default=list
     )
+    
+    # ==========================================
+    # INFORMACIÓN DE PAGO
+    # ==========================================
     total = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        verbose_name="Total del servicio"
+        verbose_name="Total del servicio",
+        default=0,
+        validators=[MinValueValidator(Decimal('0'))]
     )
     seña = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        verbose_name="Seña pagada (30%)"
+        verbose_name="Seña pagada (30%)",
+        default=0,
+        validators=[MinValueValidator(Decimal('0'))]
     )
-    
-    # ==========================================
-    # ✅ NUEVOS CAMPOS PARA GESTIÓN DE PAGOS
-    # ==========================================
     saldo_pagado = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         default=0,
         verbose_name="Saldo pagado en el local",
-        help_text="Monto pagado posteriormente en la barbería"
+        help_text="Monto pagado posteriormente en la barbería",
+        validators=[MinValueValidator(Decimal('0'))]
     )
     metodo_pago = models.CharField(
         max_length=20,
@@ -104,9 +117,16 @@ class Reserva(models.Model):
         blank=True,
         verbose_name="Fecha del último pago"
     )
+    estado_pago = models.CharField(
+        max_length=20,
+        choices=ESTADO_PAGO_CHOICES,
+        default='sin_pagar',
+        verbose_name="Estado del pago"
+    )
     
     duracion_total = models.IntegerField(
-        verbose_name="Duración total en minutos"
+        verbose_name="Duración total en minutos",
+        default=60
     )
     
     # ==========================================
@@ -114,7 +134,9 @@ class Reserva(models.Model):
     # ==========================================
     comprobante = models.ImageField(
         upload_to='comprobantes/%Y/%m/%d/',
-        verbose_name="Comprobante de pago"
+        verbose_name="Comprobante de pago",
+        blank=True,
+        null=True
     )
     estado = models.CharField(
         max_length=20,
@@ -144,14 +166,30 @@ class Reserva(models.Model):
         verbose_name = "Reserva"
         verbose_name_plural = "Reservas"
         ordering = ['-fecha_creacion']
+        indexes = [
+            models.Index(fields=['fecha', 'barbero']),
+            models.Index(fields=['email_cliente']),
+            models.Index(fields=['estado']),
+            models.Index(fields=['estado_pago']),
+        ]
     
     def save(self, *args, **kwargs):
-        # ✅ Auto-sincronizar barbero_nombre cuando hay barbero
+        # Auto-sincronizar barbero_nombre cuando hay barbero
         if self.barbero and not self.barbero_nombre:
             if hasattr(self.barbero, 'barber_profile'):
                 self.barbero_nombre = self.barbero.barber_profile.name
             else:
                 self.barbero_nombre = self.barbero.get_full_name() or self.barbero.username
+        
+        # Calcular y actualizar estado_pago automáticamente
+        pendiente = float(self.total) - float(self.seña) - float(self.saldo_pagado)
+        
+        if pendiente <= 0.01:  # Tolerancia de 1 centavo
+            self.estado_pago = 'pagado'
+        elif float(self.seña) > 0 or float(self.saldo_pagado) > 0:
+            self.estado_pago = 'parcial'
+        else:
+            self.estado_pago = 'sin_pagar'
         
         super().save(*args, **kwargs)
     
@@ -159,15 +197,21 @@ class Reserva(models.Model):
         return f"Reserva #{self.id} - {self.nombre_cliente} {self.apellido_cliente} ({self.estado})"
     
     @property
-    def resto_a_pagar(self):
-        """Calcula el resto que debe pagar en la barbería"""
+    def pendiente(self):
+        """Calcula el monto pendiente de pago"""
         try:
             total = Decimal(str(self.total)) if self.total else Decimal('0')
             sena = Decimal(str(self.seña)) if self.seña else Decimal('0')
             saldo = Decimal(str(self.saldo_pagado)) if self.saldo_pagado else Decimal('0')
-            return total - sena - saldo
+            resultado = total - sena - saldo
+            return float(max(resultado, Decimal('0')))
         except (ValueError, TypeError, AttributeError):
-            return Decimal('0')
+            return 0.0
+    
+    @property
+    def resto_a_pagar(self):
+        """Alias de pendiente para compatibilidad"""
+        return self.pendiente
     
     @property
     def cliente_nombre_completo(self):
@@ -177,7 +221,7 @@ class Reserva(models.Model):
     @property
     def esta_completamente_pagado(self):
         """Verifica si la reserva está completamente pagada"""
-        return self.resto_a_pagar <= 0
+        return self.pendiente <= 0.01
     
     @property
     def tiene_pago_parcial(self):
