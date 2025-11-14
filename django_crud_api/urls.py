@@ -28,12 +28,12 @@ router = DefaultRouter()
 router.register(r'barbers', BarberViewSet, basename='barbers')
 router.register(r'servicios', ServicioViewSet, basename='servicios')
 router.register(r'proveedores', ProveedorViewSet, basename='proveedores')
-router.register(r'caja', MovimientoCajaViewSet, basename='caja')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),
     path('api/usuarios/', include('usuarios.urls')),
+    path('api/caja/', include('caja.urls')),
     
     # RESERVAS
     path('api/reservas/crear/', crear_reserva, name='reservas-crear'),

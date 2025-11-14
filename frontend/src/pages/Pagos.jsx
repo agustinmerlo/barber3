@@ -61,35 +61,6 @@ const Pagos = () => {
     setMetodoPago("efectivo");
   };
 
-  const registrarMovimientoCaja = async (monto, descripcion, metodoPago) => {
-    try {
-      const movimiento = {
-        tipo: "ingreso",
-        monto: parseFloat(monto),
-        descripcion: descripcion,
-        metodo_pago: metodoPago,
-        categoria: "servicios",
-        fecha: new Date().toISOString().split('T')[0]
-      };
-
-      const res = await fetch(`${API_URL}/caja/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(movimiento)
-      });
-
-      if (!res.ok) {
-        const errorData = await res.text();
-        console.warn(`Advertencia en caja: ${res.status} - ${errorData}`);
-      }
-
-      return res.ok ? await res.json() : null;
-    } catch (err) {
-      console.error("Error registrando en caja:", err);
-      return null;
-    }
-  };
-
   const registrarPago = async () => {
     if (!montoPago || parseFloat(montoPago) <= 0) {
       alert("Ingresa un monto válido");
@@ -116,7 +87,7 @@ const Pagos = () => {
         seña: reservaSeleccionada.seña
       });
 
-      // Preparar datos para actualizar (NO enviar estado_pago, se calcula en el backend)
+      // ✅ Solo actualizar la reserva - el backend registra automáticamente en caja
       const body = {
         saldo_pagado: parseFloat(nuevoSaldoPagado.toFixed(2)),
         metodo_pago: metodoPago,
@@ -140,11 +111,8 @@ const Pagos = () => {
       const reservaActualizada = await res.json();
       console.log("✅ Reserva actualizada:", reservaActualizada);
 
-      // Registrar en caja
-      const descripcionCaja = `Pago saldo - ${reservaSeleccionada.nombre_cliente} ${reservaSeleccionada.apellido_cliente}`;
-      await registrarMovimientoCaja(monto, descripcionCaja, metodoPago);
-
-      alert(`✅ Pago de $${monto.toFixed(2)} registrado exitosamente`);
+      // ✅ El backend ya registró el pago en caja automáticamente
+      alert(`✅ Pago de $${monto.toFixed(2)} registrado exitosamente y guardado en caja`);
       cerrarModal();
       
       // Recargar reservas para actualizar la vista

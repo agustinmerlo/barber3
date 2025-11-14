@@ -1,15 +1,11 @@
 # caja/urls.py
-from django.urls import path
-from . import views
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import MovimientoCajaViewSet, CierreCajaViewSet, TurnoCajaViewSet
 
-urlpatterns = [
-    # Movimientos CRUD
-    path('', views.listar_crear_movimientos, name='listar_crear_movimientos'),
-    path('<int:movimiento_id>/', views.detalle_movimiento, name='detalle_movimiento'),
-    
-    # Estadísticas
-    path('estadisticas/', views.estadisticas_caja, name='estadisticas_caja'),
-    
-    # Cierres de caja
-    path('cierres/', views.listar_crear_cierres, name='listar_crear_cierres'),
-]
+router = DefaultRouter()
+router.register(r'movimientos', MovimientoCajaViewSet, basename='movimiento')
+router.register(r'cierres', CierreCajaViewSet, basename='cierre')
+router.register(r'turnos', TurnoCajaViewSet, basename='turno')
+
+urlpatterns = router.urls 

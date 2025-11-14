@@ -1,233 +1,388 @@
 # caja/views.py
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.utils import timezone
-from django.db.models import Sum, Count, Q
+from django.db.models import Sum, Q
 from decimal import Decimal
-from datetime import datetime
 
-from .models import MovimientoCaja, CierreCaja
+from .models import MovimientoCaja, CierreCaja, TurnoCaja
 from .serializers import (
-    MovimientoCajaSerializer, 
+    MovimientoCajaSerializer,
     CierreCajaSerializer,
-    CierreCajaCreateSerializer
+    TurnoCajaSerializer,
+    ResumenTurnoSerializer,
+    MovimientoCajaDetalladoSerializer
 )
 
 
-class MovimientoCajaViewSet(viewsets.ModelViewSet):
-    queryset = MovimientoCaja.objects.all()
-    serializer_class = MovimientoCajaSerializer
-    permission_classes = [AllowAny]
-
-
-class CierreCajaViewSet(viewsets.ModelViewSet):
-    queryset = CierreCaja.objects.all()
-    serializer_class = CierreCajaSerializer
+class TurnoCajaViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestionar turnos de caja
+    """
+    queryset = TurnoCaja.objects.all()
+    serializer_class = TurnoCajaSerializer
     permission_classes = [AllowAny]
     
-    @action(detail=False, methods=['post'])
-    def cerrar_caja(self, request):
-        """
-        Endpoint para cerrar caja y generar el reporte
-        POST /api/caja/cierres/cerrar_caja/
+    def get_queryset(self):
+        """Filtrar turnos"""
+        queryset = TurnoCaja.objects.all()
         
-        Body:
+        # Filtros
+        estado = self.request.query_params.get('estado')
+        fecha_desde = self.request.query_params.get('fecha_desde')
+        fecha_hasta = self.request.query_params.get('fecha_hasta')
+        
+        if estado:
+            queryset = queryset.filter(estado=estado)
+        if fecha_desde:
+            queryset = queryset.filter(fecha_apertura__gte=fecha_desde)
+        if fecha_hasta:
+            queryset = queryset.filter(fecha_apertura__lte=fecha_hasta)
+        
+        return queryset.order_by('-fecha_apertura')
+    
+    def perform_create(self, serializer):
+        """Crear turno asociando usuario"""
+        serializer.save(
+            usuario_apertura=self.request.user if self.request.user.is_authenticated else None
+        )
+    
+    @action(detail=False, methods=['get'])
+    def turno_activo(self, request):
+        """
+        GET /api/caja/turnos/turno_activo/
+        Obtiene el turno actualmente abierto (si existe)
+        """
+        turno_abierto = TurnoCaja.objects.filter(estado='abierto').first()
+        
+        if not turno_abierto:
+            return Response({
+                'existe': False,
+                'mensaje': 'No hay ningún turno abierto'
+            }, status=200)
+        
+        serializer = TurnoCajaSerializer(turno_abierto)
+        return Response({
+            'existe': True,
+            'turno': serializer.data
+        }, status=200)
+    
+    @action(detail=True, methods=['post'])
+    def cerrar(self, request, pk=None):
+        """
+        POST /api/caja/turnos/{id}/cerrar/
+        Cierra un turno de caja
+        
+        Body esperado:
         {
-            "fecha_apertura": "2025-11-12T12:00:00Z",
-            "monto_inicial": 20000.00,
-            "efectivo_real": 27000.00,
-            "observaciones": "Todo ok",
-            "usuario_apertura_id": 1
+            "monto_cierre": 15000.50,
+            "observaciones": "Todo correcto"
         }
         """
+        turno = self.get_object()
+        
+        if turno.estado == 'cerrado':
+            return Response({
+                'error': 'Este turno ya está cerrado'
+            }, status=400)
+        
+        monto_cierre = request.data.get('monto_cierre')
+        observaciones = request.data.get('observaciones', '')
+        
+        if monto_cierre is None:
+            return Response({
+                'error': 'Debes proporcionar el monto_cierre'
+            }, status=400)
+        
         try:
-            # Validar datos
-            fecha_apertura_str = request.data.get('fecha_apertura')
-            monto_inicial = request.data.get('monto_inicial')
-            efectivo_real = request.data.get('efectivo_real')
-            observaciones = request.data.get('observaciones', '')
-            usuario_apertura_id = request.data.get('usuario_apertura_id')
-            
-            if not fecha_apertura_str or not monto_inicial or efectivo_real is None:
+            monto_cierre = Decimal(str(monto_cierre))
+            if monto_cierre < 0:
                 return Response({
-                    'error': 'Faltan campos requeridos: fecha_apertura, monto_inicial, efectivo_real'
+                    'error': 'El monto de cierre no puede ser negativo'
                 }, status=400)
-            
-            # Parsear fecha de apertura
-            try:
-                fecha_apertura = datetime.fromisoformat(fecha_apertura_str.replace('Z', '+00:00'))
-                if timezone.is_naive(fecha_apertura):
-                    fecha_apertura = timezone.make_aware(fecha_apertura)
-            except:
-                return Response({'error': 'Formato de fecha_apertura inválido'}, status=400)
-            
-            monto_inicial = Decimal(str(monto_inicial))
-            efectivo_real = Decimal(str(efectivo_real))
-            
-            # Obtener movimientos del turno
-            movimientos = MovimientoCaja.objects.filter(
-                fecha_creacion__gte=fecha_apertura,
-                fecha_creacion__lte=timezone.now(),
-                cierre_caja__isnull=True  # Solo movimientos sin cierre
+        except (ValueError, TypeError):
+            return Response({
+                'error': 'El monto de cierre debe ser un número válido'
+            }, status=400)
+        
+        # Cerrar el turno
+        turno.cerrar_turno(
+            monto_cierre=monto_cierre,
+            observaciones=observaciones,
+            usuario=request.user if request.user.is_authenticated else None
+        )
+        
+        # Marcar todos los movimientos del turno como no editables
+        turno.movimientos_turno.update(es_editable=False)
+        
+        serializer = TurnoCajaSerializer(turno)
+        return Response({
+            'mensaje': 'Turno cerrado exitosamente',
+            'turno': serializer.data
+        }, status=200)
+    
+    @action(detail=True, methods=['get'])
+    def resumen(self, request, pk=None):
+        """
+        GET /api/caja/turnos/{id}/resumen/
+        Obtiene un resumen completo del turno con todos sus movimientos
+        """
+        turno = self.get_object()
+        movimientos = turno.movimientos_turno.all()
+        
+        # Calcular totales por método de pago
+        ingresos_por_metodo = {}
+        egresos_por_metodo = {}
+        
+        for metodo in ['efectivo', 'tarjeta', 'transferencia', 'mercadopago']:
+            ingresos_por_metodo[metodo] = float(
+                sum(m.monto for m in movimientos.filter(
+                    tipo='ingreso',
+                    metodo_pago=metodo
+                )) or Decimal('0')
             )
-            
-            # Calcular totales
-            # Efectivo
-            ingresos_efectivo = movimientos.filter(
-                tipo='ingreso',
-                metodo_pago='efectivo'
-            ).aggregate(total=Sum('monto'))['total'] or Decimal('0')
-            
-            egresos_efectivo = movimientos.filter(
-                tipo='egreso',
-                metodo_pago='efectivo'
-            ).aggregate(total=Sum('monto'))['total'] or Decimal('0')
-            
-            # Otros medios
-            ingresos_otros = movimientos.filter(
+            egresos_por_metodo[metodo] = float(
+                sum(m.monto for m in movimientos.filter(
+                    tipo='egreso',
+                    metodo_pago=metodo
+                )) or Decimal('0')
+            )
+        
+        # Calcular totales por categoría
+        ingresos_por_categoria = {}
+        egresos_por_categoria = {}
+        
+        categorias = ['servicios', 'productos', 'gastos', 'sueldos', 
+                     'alquiler', 'servicios_publicos', 'otros']
+        
+        for cat in categorias:
+            ingresos_por_categoria[cat] = float(
+                sum(m.monto for m in movimientos.filter(
+                    tipo='ingreso',
+                    categoria=cat
+                )) or Decimal('0')
+            )
+            egresos_por_categoria[cat] = float(
+                sum(m.monto for m in movimientos.filter(
+                    tipo='egreso',
+                    categoria=cat
+                )) or Decimal('0')
+            )
+        
+        # Total de ingresos/egresos NO en efectivo
+        total_ingresos_otros = float(
+            sum(m.monto for m in movimientos.filter(
                 tipo='ingreso'
-            ).exclude(metodo_pago='efectivo').aggregate(total=Sum('monto'))['total'] or Decimal('0')
-            
-            egresos_otros = movimientos.filter(
+            ).exclude(metodo_pago='efectivo')) or Decimal('0')
+        )
+        
+        total_egresos_otros = float(
+            sum(m.monto for m in movimientos.filter(
                 tipo='egreso'
-            ).exclude(metodo_pago='efectivo').aggregate(total=Sum('monto'))['total'] or Decimal('0')
-            
-            # Efectivo esperado
-            efectivo_esperado = monto_inicial + ingresos_efectivo - egresos_efectivo
-            diferencia = efectivo_real - efectivo_esperado
-            
-            # Desglose por método de pago
-            desglose_metodos = {}
-            for metodo in ['efectivo', 'tarjeta', 'transferencia', 'mercadopago']:
-                ingresos = movimientos.filter(
-                    tipo='ingreso',
-                    metodo_pago=metodo
-                ).aggregate(total=Sum('monto'))['total'] or Decimal('0')
-                
-                egresos = movimientos.filter(
-                    tipo='egreso',
-                    metodo_pago=metodo
-                ).aggregate(total=Sum('monto'))['total'] or Decimal('0')
-                
-                desglose_metodos[metodo] = {
-                    'ingresos': float(ingresos),
-                    'egresos': float(egresos),
-                    'neto': float(ingresos - egresos)
-                }
-            
-            # Desglose por categoría
-            categorias = movimientos.values('categoria').distinct()
-            desglose_categorias = {}
-            for cat in categorias:
-                categoria = cat['categoria']
-                ingresos = movimientos.filter(
-                    tipo='ingreso',
-                    categoria=categoria
-                ).aggregate(total=Sum('monto'))['total'] or Decimal('0')
-                
-                egresos = movimientos.filter(
-                    tipo='egreso',
-                    categoria=categoria
-                ).aggregate(total=Sum('monto'))['total'] or Decimal('0')
-                
-                desglose_categorias[categoria] = {
-                    'ingresos': float(ingresos),
-                    'egresos': float(egresos),
-                    'neto': float(ingresos - egresos)
-                }
-            
-            # Contadores
-            cantidad_movimientos = movimientos.count()
-            cantidad_ingresos = movimientos.filter(tipo='ingreso').count()
-            cantidad_egresos = movimientos.filter(tipo='egreso').count()
-            
-            # Crear cierre de caja
-            cierre = CierreCaja.objects.create(
-                fecha_apertura=fecha_apertura,
-                fecha_cierre=timezone.now(),
-                usuario_apertura_id=usuario_apertura_id if usuario_apertura_id else None,
-                usuario_cierre=request.user if request.user.is_authenticated else None,
-                monto_inicial=monto_inicial,
-                total_ingresos_efectivo=ingresos_efectivo,
-                total_egresos_efectivo=egresos_efectivo,
-                total_ingresos_otros=ingresos_otros,
-                total_egresos_otros=egresos_otros,
-                efectivo_esperado=efectivo_esperado,
-                efectivo_real=efectivo_real,
-                diferencia=diferencia,
-                desglose_metodos=desglose_metodos,
-                desglose_categorias=desglose_categorias,
-                cantidad_movimientos=cantidad_movimientos,
-                cantidad_ingresos=cantidad_ingresos,
-                cantidad_egresos=cantidad_egresos,
-                observaciones=observaciones,
-                esta_cerrado=True
-            )
-            
-            # Asociar movimientos al cierre
-            movimientos.update(cierre_caja=cierre)
-            
-            # Serializar respuesta
-            serializer = CierreCajaSerializer(cierre)
-            
-            return Response({
-                'mensaje': 'Caja cerrada exitosamente',
-                'cierre': serializer.data
-            }, status=201)
-            
-        except Exception as e:
-            print(f"Error al cerrar caja: {e}")
-            import traceback
-            traceback.print_exc()
-            return Response({
-                'error': f'Error al cerrar caja: {str(e)}'
-            }, status=500)
+            ).exclude(metodo_pago='efectivo')) or Decimal('0')
+        )
+        
+        # Serializar datos
+        turno_data = TurnoCajaSerializer(turno).data
+        movimientos_data = MovimientoCajaSerializer(movimientos, many=True).data
+        
+        return Response({
+            'turno': turno_data,
+            'movimientos': movimientos_data,
+            'total_ingresos_otros': total_ingresos_otros,
+            'total_egresos_otros': total_egresos_otros,
+            'ingresos_por_metodo': ingresos_por_metodo,
+            'egresos_por_metodo': egresos_por_metodo,
+            'ingresos_por_categoria': ingresos_por_categoria,
+            'egresos_por_categoria': egresos_por_categoria
+        }, status=200)
     
     @action(detail=False, methods=['get'])
     def historial(self, request):
         """
-        Obtener historial de cierres de caja
-        GET /api/caja/cierres/historial/
+        GET /api/caja/turnos/historial/
+        Obtiene el historial de todos los turnos cerrados
         """
-        cierres = CierreCaja.objects.all().order_by('-fecha_cierre')
-        serializer = CierreCajaSerializer(cierres, many=True)
-        return Response(serializer.data)
-    
-    @action(detail=True, methods=['get'])
-    def detalle_completo(self, request, pk=None):
-        """
-        Obtener detalle completo de un cierre incluyendo todos sus movimientos
-        GET /api/caja/cierres/{id}/detalle_completo/
-        """
-        try:
-            cierre = self.get_object()
-            serializer = CierreCajaSerializer(cierre)
-            return Response(serializer.data)
-        except CierreCaja.DoesNotExist:
-            return Response({'error': 'Cierre no encontrado'}, status=404)
+        turnos_cerrados = TurnoCaja.objects.filter(estado='cerrado')
+        
+        # Filtros
+        fecha_desde = request.query_params.get('fecha_desde')
+        fecha_hasta = request.query_params.get('fecha_hasta')
+        
+        if fecha_desde:
+            turnos_cerrados = turnos_cerrados.filter(fecha_cierre__gte=fecha_desde)
+        if fecha_hasta:
+            turnos_cerrados = turnos_cerrados.filter(fecha_cierre__lte=fecha_hasta)
+        
+        serializer = TurnoCajaSerializer(turnos_cerrados, many=True)
+        return Response({
+            'cantidad': turnos_cerrados.count(),
+            'turnos': serializer.data
+        }, status=200)
 
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def movimientos_sin_cierre(request):
+class MovimientoCajaViewSet(viewsets.ModelViewSet):
     """
-    Obtener movimientos que aún no están asociados a ningún cierre
-    GET /api/caja/movimientos-sin-cierre/
+    ViewSet para CRUD completo de MovimientoCaja
     """
-    fecha_desde = request.query_params.get('fecha_desde')
+    queryset = MovimientoCaja.objects.all()
+    serializer_class = MovimientoCajaSerializer
+    permission_classes = [AllowAny]
     
-    movimientos = MovimientoCaja.objects.filter(cierre_caja__isnull=True)
+    def get_queryset(self):
+        """Aplicar filtros desde query params"""
+        queryset = MovimientoCaja.objects.all()
+        
+        # Filtros
+        tipo = self.request.query_params.get('tipo')
+        categoria = self.request.query_params.get('categoria')
+        metodo_pago = self.request.query_params.get('metodo_pago')
+        fecha_desde = self.request.query_params.get('fecha_desde')
+        fecha_hasta = self.request.query_params.get('fecha_hasta')
+        turno_id = self.request.query_params.get('turno')
+        solo_editables = self.request.query_params.get('solo_editables')
+        
+        if tipo:
+            queryset = queryset.filter(tipo=tipo)
+        if categoria:
+            queryset = queryset.filter(categoria=categoria)
+        if metodo_pago:
+            queryset = queryset.filter(metodo_pago=metodo_pago)
+        if fecha_desde:
+            queryset = queryset.filter(fecha__gte=fecha_desde)
+        if fecha_hasta:
+            queryset = queryset.filter(fecha__lte=fecha_hasta)
+        if turno_id:
+            queryset = queryset.filter(turno_id=turno_id)
+        if solo_editables == 'true':
+            queryset = queryset.filter(es_editable=True)
+        
+        return queryset.order_by('-fecha', '-hora')
     
-    if fecha_desde:
-        try:
-            fecha = datetime.fromisoformat(fecha_desde.replace('Z', '+00:00'))
-            if timezone.is_naive(fecha):
-                fecha = timezone.make_aware(fecha)
-            movimientos = movimientos.filter(fecha_creacion__gte=fecha)
-        except:
-            pass
+    def perform_create(self, serializer):
+        """Asociar usuario y turno activo al crear"""
+        # Buscar turno activo
+        turno_activo = TurnoCaja.objects.filter(estado='abierto').first()
+        
+        serializer.save(
+            usuario_registro=self.request.user if self.request.user.is_authenticated else None,
+            turno=turno_activo
+        )
     
-    serializer = MovimientoCajaSerializer(movimientos, many=True)
-    return Response(serializer.data)
+    def update(self, request, *args, **kwargs):
+        """Verificar que el movimiento sea editable antes de actualizar"""
+        instance = self.get_object()
+        
+        if not instance.es_editable:
+            return Response({
+                'error': 'Este movimiento no puede ser editado porque pertenece a un turno cerrado'
+            }, status=400)
+        
+        return super().update(request, *args, **kwargs)
+    
+    def destroy(self, request, *args, **kwargs):
+        """Verificar que el movimiento sea editable antes de eliminar"""
+        instance = self.get_object()
+        
+        if not instance.es_editable:
+            return Response({
+                'error': 'Este movimiento no puede ser eliminado porque pertenece a un turno cerrado'
+            }, status=400)
+        
+        return super().destroy(request, *args, **kwargs)
+    
+    @action(detail=False, methods=['get'])
+    def estadisticas(self, request):
+        """
+        GET /api/caja/movimientos/estadisticas/
+        Devuelve estadísticas generales de la caja
+        """
+        fecha_desde = request.query_params.get('fecha_desde')
+        fecha_hasta = request.query_params.get('fecha_hasta')
+        
+        movimientos = MovimientoCaja.objects.all()
+        
+        if fecha_desde:
+            movimientos = movimientos.filter(fecha__gte=fecha_desde)
+        if fecha_hasta:
+            movimientos = movimientos.filter(fecha__lte=fecha_hasta)
+        
+        # Totales generales
+        total_ingresos = movimientos.filter(tipo='ingreso').aggregate(
+            total=Sum('monto')
+        )['total'] or Decimal('0')
+        
+        total_egresos = movimientos.filter(tipo='egreso').aggregate(
+            total=Sum('monto')
+        )['total'] or Decimal('0')
+        
+        saldo = total_ingresos - total_egresos
+        
+        # Estadísticas por método de pago
+        por_metodo = {}
+        for metodo in ['efectivo', 'tarjeta', 'transferencia', 'mercadopago']:
+            ingresos = movimientos.filter(
+                tipo='ingreso', 
+                metodo_pago=metodo
+            ).aggregate(total=Sum('monto'))['total'] or Decimal('0')
+            
+            egresos = movimientos.filter(
+                tipo='egreso', 
+                metodo_pago=metodo
+            ).aggregate(total=Sum('monto'))['total'] or Decimal('0')
+            
+            por_metodo[metodo] = {
+                'ingresos': float(ingresos),
+                'egresos': float(egresos),
+                'saldo': float(ingresos - egresos)
+            }
+        
+        # Estadísticas por categoría
+        por_categoria = {}
+        categorias = ['servicios', 'productos', 'gastos', 'sueldos', 
+                     'alquiler', 'servicios_publicos', 'otros']
+        
+        for cat in categorias:
+            ingresos = movimientos.filter(
+                tipo='ingreso', 
+                categoria=cat
+            ).aggregate(total=Sum('monto'))['total'] or Decimal('0')
+            
+            egresos = movimientos.filter(
+                tipo='egreso', 
+                categoria=cat
+            ).aggregate(total=Sum('monto'))['total'] or Decimal('0')
+            
+            por_categoria[cat] = {
+                'ingresos': float(ingresos),
+                'egresos': float(egresos),
+                'saldo': float(ingresos - egresos)
+            }
+        
+        return Response({
+            'total_ingresos': float(total_ingresos),
+            'total_egresos': float(total_egresos),
+            'saldo': float(saldo),
+            'cantidad_movimientos': movimientos.count(),
+            'por_metodo_pago': por_metodo,
+            'por_categoria': por_categoria,
+            'fecha_desde': fecha_desde,
+            'fecha_hasta': fecha_hasta
+        }, status=200)
+
+
+class CierreCajaViewSet(viewsets.ModelViewSet):
+    """ViewSet para CRUD de CierreCaja periódicos"""
+    queryset = CierreCaja.objects.all()
+    serializer_class = CierreCajaSerializer
+    permission_classes = [AllowAny]
+    
+    def perform_create(self, serializer):
+        """Calcular totales al crear un cierre"""
+        cierre = serializer.save(
+            usuario_cierre=self.request.user if self.request.user.is_authenticated else None
+        )
+        # Si tienes un método calcular_totales en CierreCaja, descoméntalo:
+        # cierre.calcular_totales()

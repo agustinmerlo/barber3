@@ -6,77 +6,46 @@ from decimal import Decimal
 
 User = get_user_model()
 
+
 class TurnoCaja(models.Model):
     """
-    Modelo para gestionar turnos de caja (apertura y cierre)
+    Modelo NUEVO para gestionar turnos de caja (apertura y cierre rápido)
+    Coexiste con CierreCaja sin conflictos
     """
     ESTADO_CHOICES = [
         ('abierto', 'Abierto'),
         ('cerrado', 'Cerrado'),
     ]
     
-    # Información del turno
     estado = models.CharField(max_length=10, choices=ESTADO_CHOICES, default='abierto')
     
     # Apertura
     fecha_apertura = models.DateTimeField(default=timezone.now)
-    monto_apertura = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2,
-        help_text="Monto inicial en efectivo al abrir la caja"
-    )
+    monto_apertura = models.DecimalField(decimal_places=2, max_digits=10)
     usuario_apertura = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
         null=True,
-        related_name='turnos_abiertos',
-        help_text="Usuario que abrió la caja"
+        related_name='turnos_abiertos'
     )
     
     # Cierre
     fecha_cierre = models.DateTimeField(null=True, blank=True)
-    monto_cierre = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2,
-        null=True,
-        blank=True,
-        help_text="Efectivo contado al cerrar la caja"
-    )
+    monto_cierre = models.DecimalField(decimal_places=2, max_digits=10, null=True, blank=True)
     usuario_cierre = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='turnos_cerrados',
-        help_text="Usuario que cerró la caja"
+        related_name='turnos_cerrados'
     )
     observaciones_cierre = models.TextField(blank=True, null=True)
     
     # Totales calculados
-    total_ingresos_efectivo = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2, 
-        default=0,
-        help_text="Total de ingresos en efectivo del turno"
-    )
-    total_egresos_efectivo = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2, 
-        default=0,
-        help_text="Total de egresos en efectivo del turno"
-    )
-    efectivo_esperado = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2, 
-        default=0,
-        help_text="Efectivo que debería haber en caja"
-    )
-    diferencia = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2, 
-        default=0,
-        help_text="Diferencia entre efectivo esperado y contado"
-    )
+    total_ingresos_efectivo = models.DecimalField(decimal_places=2, default=0, max_digits=10)
+    total_egresos_efectivo = models.DecimalField(decimal_places=2, default=0, max_digits=10)
+    efectivo_esperado = models.DecimalField(decimal_places=2, default=0, max_digits=10)
+    diferencia = models.DecimalField(decimal_places=2, default=0, max_digits=10)
     
     # Metadata
     fecha_creacion = models.DateTimeField(auto_now_add=True)
@@ -86,10 +55,6 @@ class TurnoCaja(models.Model):
         ordering = ['-fecha_apertura']
         verbose_name = 'Turno de Caja'
         verbose_name_plural = 'Turnos de Caja'
-        indexes = [
-            models.Index(fields=['-fecha_apertura']),
-            models.Index(fields=['estado']),
-        ]
     
     def __str__(self):
         fecha = self.fecha_apertura.strftime('%d/%m/%Y %H:%M')
@@ -97,21 +62,14 @@ class TurnoCaja(models.Model):
     
     def calcular_totales(self):
         """Calcula los totales del turno basándose en los movimientos"""
-        movimientos = self.movimientos.all()
+        movimientos = self.movimientos_turno.all()
         
-        # Solo efectivo
         self.total_ingresos_efectivo = sum(
-            m.monto for m in movimientos.filter(
-                tipo='ingreso', 
-                metodo_pago='efectivo'
-            )
+            m.monto for m in movimientos.filter(tipo='ingreso', metodo_pago='efectivo')
         ) or Decimal('0.00')
         
         self.total_egresos_efectivo = sum(
-            m.monto for m in movimientos.filter(
-                tipo='egreso', 
-                metodo_pago='efectivo'
-            )
+            m.monto for m in movimientos.filter(tipo='egreso', metodo_pago='efectivo')
         ) or Decimal('0.00')
         
         self.efectivo_esperado = (
@@ -143,6 +101,8 @@ class TurnoCaja(models.Model):
 class MovimientoCaja(models.Model):
     """
     Modelo para registrar todos los movimientos de caja
+    ✅ MANTIENE compatibilidad con CierreCaja
+    ✅ AGREGA soporte para TurnoCaja
     """
     
     TIPO_CHOICES = [
@@ -167,13 +127,23 @@ class MovimientoCaja(models.Model):
         ('mercadopago', 'Mercado Pago'),
     ]
     
-    # Relación con turno
-    turno = models.ForeignKey(
-        TurnoCaja,
-        on_delete=models.CASCADE,
-        related_name='movimientos',
+    # ✅ MANTIENE: Relación con cierre de caja (tu código actual)
+    cierre_caja = models.ForeignKey(
+        'CierreCaja',
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
+        related_name='movimientos',
+        help_text="Cierre al que pertenece este movimiento"
+    )
+    
+    # ✅ NUEVO: Relación con turno (opcional, no rompe nada)
+    turno = models.ForeignKey(
+        TurnoCaja,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='movimientos_turno',
         help_text="Turno al que pertenece este movimiento"
     )
     
@@ -232,7 +202,7 @@ class MovimientoCaja(models.Model):
         help_text="Comprobante del movimiento"
     )
     
-    # Campo para bloquear edición
+    # ✅ NUEVO: Control de edición
     es_editable = models.BooleanField(
         default=True,
         help_text="Si está en un turno cerrado, no se puede editar"
@@ -243,12 +213,13 @@ class MovimientoCaja(models.Model):
     fecha_actualizacion = models.DateTimeField(auto_now=True)
     
     class Meta:
-        ordering = ['-fecha', '-hora']
+        ordering = ['-fecha_creacion']
         verbose_name = 'Movimiento de Caja'
         verbose_name_plural = 'Movimientos de Caja'
         indexes = [
-            models.Index(fields=['-fecha', '-hora']),
+            models.Index(fields=['-fecha_creacion']),
             models.Index(fields=['tipo', 'categoria']),
+            models.Index(fields=['cierre_caja']),
             models.Index(fields=['turno']),
         ]
     
@@ -272,90 +243,131 @@ class MovimientoCaja(models.Model):
         # Actualizar totales del turno si existe
         if self.turno:
             self.turno.calcular_totales()
-    
-    def clean(self):
-        """Validaciones personalizadas"""
-        from django.core.exceptions import ValidationError
-        
-        if self.monto and self.monto <= 0:
-            raise ValidationError({'monto': 'El monto debe ser mayor a 0'})
-        
-        if self.tipo == 'ingreso' and self.categoria == 'gastos':
-            raise ValidationError({
-                'categoria': 'Un ingreso no puede tener categoría "gastos"'
-            })
-        
-        # Validar que no se edite un movimiento de un turno cerrado
-        if self.pk and self.turno and self.turno.estado == 'cerrado':
-            raise ValidationError({
-                'turno': 'No se puede modificar un movimiento de un turno cerrado'
-            })
 
 
 class CierreCaja(models.Model):
     """
-    Modelo para registrar cierres de caja periódicos (diarios/semanales/mensuales)
-    Independiente de los turnos individuales
+    ✅ MANTIENE tu modelo actual SIN cambios
     """
-    fecha_cierre = models.DateField()
-    fecha_desde = models.DateField()
-    fecha_hasta = models.DateField()
+    # Fechas
+    fecha_apertura = models.DateTimeField()
+    fecha_cierre = models.DateTimeField(default=timezone.now)
     
-    # Totales generales
-    total_ingresos = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    total_egresos = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    saldo_neto = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    
-    # Desglose por método de pago
-    efectivo_total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    tarjeta_total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    transferencia_total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    mercadopago_total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    
-    # Usuario que realizó el cierre
+    # Usuarios
+    usuario_apertura = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cierres_apertura',
+        help_text="Usuario que abrió la caja"
+    )
     usuario_cierre = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
         null=True,
-        related_name='cierres_realizados'
+        blank=True,
+        related_name='cierres_cierre',
+        help_text="Usuario que cerró la caja"
     )
     
+    # Montos
+    monto_inicial = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2,
+        help_text="Monto inicial en efectivo al abrir la caja"
+    )
+    
+    # Totales en efectivo
+    total_ingresos_efectivo = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        default=0
+    )
+    total_egresos_efectivo = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        default=0
+    )
+    
+    # Totales otros medios
+    total_ingresos_otros = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        default=0,
+        help_text="Total ingresos en tarjeta, transferencia, etc"
+    )
+    total_egresos_otros = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        default=0,
+        help_text="Total egresos en tarjeta, transferencia, etc"
+    )
+    
+    # Efectivo
+    efectivo_esperado = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2,
+        default=0,
+        help_text="Efectivo que debería haber en caja"
+    )
+    efectivo_real = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2,
+        default=0,
+        help_text="Efectivo contado al cerrar"
+    )
+    diferencia = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2,
+        default=0,
+        help_text="Diferencia entre efectivo esperado y real"
+    )
+    
+    # Desgloses
+    desglose_metodos = models.JSONField(
+        default=dict,
+        help_text="Desglose de movimientos por método de pago"
+    )
+    desglose_categorias = models.JSONField(
+        default=dict,
+        help_text="Desglose de movimientos por categoría"
+    )
+    
+    # Contadores
+    cantidad_movimientos = models.IntegerField(default=0)
+    cantidad_ingresos = models.IntegerField(default=0)
+    cantidad_egresos = models.IntegerField(default=0)
+    
+    # Otros
     observaciones = models.TextField(blank=True, null=True)
-    fecha_creacion = models.DateTimeField(default=timezone.now)
+    esta_cerrado = models.BooleanField(default=True)
     
     class Meta:
         ordering = ['-fecha_cierre']
-        verbose_name = 'Cierre de Caja Periódico'
-        verbose_name_plural = 'Cierres de Caja Periódicos'
+        verbose_name = 'Cierre de Caja'
+        verbose_name_plural = 'Cierres de Caja'
+        indexes = [
+            models.Index(fields=['-fecha_cierre']),
+        ]
     
     def __str__(self):
-        return f"Cierre {self.fecha_cierre} (${self.saldo_neto})"
+        fecha = self.fecha_cierre.strftime('%d/%m/%Y %H:%M')
+        return f"Cierre {self.id} - {fecha}"
     
-    def calcular_totales(self):
-        """Calcula los totales basándose en los movimientos del período"""
-        movimientos = MovimientoCaja.objects.filter(
-            fecha__gte=self.fecha_desde,
-            fecha__lte=self.fecha_hasta
-        )
-        
-        self.total_ingresos = sum(
-            m.monto for m in movimientos.filter(tipo='ingreso')
-        ) or Decimal('0.00')
-        
-        self.total_egresos = sum(
-            m.monto for m in movimientos.filter(tipo='egreso')
-        ) or Decimal('0.00')
-        
-        self.saldo_neto = self.total_ingresos - self.total_egresos
-        
-        # Desglose por método
-        for metodo in ['efectivo', 'tarjeta', 'transferencia', 'mercadopago']:
-            total = sum(
-                m.monto for m in movimientos.filter(
-                    tipo='ingreso',
-                    metodo_pago=metodo
-                )
-            ) or Decimal('0.00')
-            setattr(self, f'{metodo}_total', total)
-        
-        self.save()
+    @property
+    def duracion_turno(self):
+        """Calcula la duración del turno en horas"""
+        if self.fecha_apertura and self.fecha_cierre:
+            delta = self.fecha_cierre - self.fecha_apertura
+            return round(delta.total_seconds() / 3600, 2)
+        return 0
+    
+    @property
+    def tipo_diferencia(self):
+        """Retorna si hay sobrante o faltante"""
+        if self.diferencia > 0:
+            return "sobrante"
+        elif self.diferencia < 0:
+            return "faltante"
+        return "exacto"
